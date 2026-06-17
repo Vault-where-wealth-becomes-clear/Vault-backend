@@ -1,0 +1,54 @@
+"""Worker local de desarrollo: long-polling de SQS + procesamiento de uploads.
+
+No es el artefacto de deploy de AWS Lambda (ese vive en `lambda/` y se empaqueta
+por separado). Este script corre en un proceso aparte durante el desarrollo
+local para que el flujo upload -> Claude -> dashboard sea testeable de punta
+a punta sin desplegar nada en AWS todavía.
+
+Uso: desde Vault-backend/, con el venv activado y .env cargado:
+    python -m worker.run
+"""
+
+import asyncio
+import json
+import traceback
+
+import boto3
+
+from app.config import settings
+from worker.processing import process_upload
+
+
+def main() -> None:
+    if not settings.sqs_queue_url:
+        raise SystemExit("SQS_QUEUE_URL no esta configurado en .env")
+
+    sqs = boto3.client(
+        "sqs",
+        region_name=settings.aws_region,
+        aws_access_key_id=settings.aws_access_key_id or None,
+        aws_secret_access_key=settings.aws_secret_access_key or None,
+    )
+
+    print(f"[worker] escuchando {settings.sqs_queue_url}")
+    while True:
+        response = sqs.receive_message(
+            QueueUrl=settings.sqs_queue_url,
+            MaxNumberOfMessages=1,
+            WaitTimeSeconds=10,
+        )
+        for message in response.get("Messages", []):
+            body = json.loads(message["Body"])
+            upload_id = body.get("upload_id")
+            print(f"[worker] procesando upload {upload_id}")
+            try:
+                asyncio.run(process_upload(body))
+                sqs.delete_message(QueueUrl=settings.sqs_queue_url, ReceiptHandle=message["ReceiptHandle"])
+                print(f"[worker] upload {upload_id} terminado")
+            except Exception:
+                traceback.print_exc()
+                print(f"[worker] upload {upload_id} fallo, queda en la cola para reintento")
+
+
+if __name__ == "__main__":
+    main()
