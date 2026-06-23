@@ -2,10 +2,12 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.middleware.auth import get_current_user
+from app.models.financial_snapshot import FinancialSnapshot
 from app.models.user import User
 from app.schemas.dashboard import (
     CategoryBreakdownItem,
@@ -13,8 +15,13 @@ from app.schemas.dashboard import (
     DashboardEvolutionResponse,
     DashboardResponse,
     EvolutionPoint,
+    FullDashboardResponse,
 )
-from app.services.dashboard_service import generate_insights, get_month_summary
+from app.services.dashboard_service import (
+    generate_insights,
+    generate_snapshot_insights,
+    get_month_summary,
+)
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -92,3 +99,48 @@ async def get_evolution(
 
     points.reverse()
     return DashboardEvolutionResponse(points=points)
+
+
+@router.get("/full", response_model=FullDashboardResponse)
+async def get_full_dashboard(
+    period: str | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Devuelve el snapshot consolidado del período: todos los módulos que se hayan
+    calculado hasta ahora para ese usuario y período, tal como están guardados en
+    financial_snapshots. El frontend arma las secciones del dashboard según qué
+    claves vengan presentes (no todas siempre van).
+    """
+    period_month = _parse_period(period)
+    snapshot = await db.scalar(
+        select(FinancialSnapshot).where(
+            FinancialSnapshot.user_id == current_user.id,
+            FinancialSnapshot.period_month == period_month,
+        )
+    )
+    if not snapshot:
+        # Sin snapshot todavia no es un error: es el estado inicial antes de procesar
+        # el primer upload del periodo. El frontend ya sabe renderizar el CTA vacio
+        # por modulo cuando estas claves vienen en null.
+        return FullDashboardResponse(period=period_month, insights=[])
+
+    previous_snapshot = await db.scalar(
+        select(FinancialSnapshot).where(
+            FinancialSnapshot.user_id == current_user.id,
+            FinancialSnapshot.period_month == _previous_month(period_month),
+        )
+    )
+
+    return FullDashboardResponse(
+        period=period_month,
+        flujo_mensual=snapshot.flujo_mensual,
+        categorizacion=snapshot.categorizacion,
+        flujo_periodo=snapshot.flujo_periodo,
+        cartera=snapshot.cartera,
+        tablero_general=snapshot.tablero_general,
+        proyeccion=snapshot.proyeccion,
+        compromisos=snapshot.compromisos,
+        insights=generate_snapshot_insights(snapshot, previous_snapshot),
+    )

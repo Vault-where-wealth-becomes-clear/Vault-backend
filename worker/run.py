@@ -7,6 +7,10 @@ a punta sin desplegar nada en AWS todavía.
 
 Uso: desde Vault-backend/, con el venv activado y .env cargado:
     python -m worker.run
+
+`poll_loop()` tambien se reusa para correr el worker in-process dentro del
+mismo servicio que la API (ver app/main.py, gateado por RUN_WORKER_INLINE) en
+deploys donde no hay forma de levantar un segundo proceso/servicio gratis.
 """
 
 import asyncio
@@ -19,7 +23,7 @@ from app.config import settings
 from worker.processing import process_upload
 
 
-def main() -> None:
+def poll_loop() -> None:
     if not settings.sqs_queue_url:
         raise SystemExit("SQS_QUEUE_URL no esta configurado en .env")
 
@@ -51,4 +55,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    poll_loop()

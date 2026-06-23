@@ -1,15 +1,25 @@
 import uuid
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
-from app.models.enums import UploadStatus
+from app.models.enums import SkillModule, UploadStatus
 
 
 class PresignRequest(BaseModel):
     account_id: uuid.UUID
     period_month: date
     filename: str
+    requested_modules: list[SkillModule] = [SkillModule.flujo_mensual]
+
+    @field_validator("requested_modules")
+    @classmethod
+    def _ensure_flujo_mensual(cls, value: list[SkillModule]) -> list[SkillModule]:
+        if not value:
+            raise ValueError("Debe seleccionar al menos un modulo")
+        if SkillModule.flujo_mensual not in value:
+            value = [SkillModule.flujo_mensual, *value]
+        return value
 
 
 class PresignResponse(BaseModel):
@@ -32,6 +42,7 @@ class UploadRead(BaseModel):
     status: UploadStatus
     detected_bank: str | None
     error_message: str | None
+    requested_modules: list[str]
     uploaded_at: datetime
     processed_at: datetime | None
 

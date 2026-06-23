@@ -7,10 +7,12 @@ from app.database import get_db
 from app.middleware.auth import security
 from app.schemas.auth import (
     ChallengeResponse,
+    ConfirmRequest,
     LoginRequest,
     RefreshRequest,
     RegisterRequest,
     RegisterResponse,
+    ResendCodeRequest,
     TokenResponse,
     TotpRequest,
 )
@@ -30,6 +32,31 @@ async def register(body: RegisterRequest, cognito: CognitoClient = Depends(get_c
     return RegisterResponse(user_id=cognito_sub, email=body.email)
 
 
+@router.post("/confirm")
+async def confirm(body: ConfirmRequest, cognito: CognitoClient = Depends(get_cognito)):
+    """Confirma el codigo enviado por email/SMS y deja la cuenta de Cognito activa."""
+    try:
+        cognito.confirm_sign_up(body.email, body.code)
+    except cognito.client.exceptions.CodeMismatchException as exc:
+        raise HTTPException(status_code=400, detail="Codigo invalido") from exc
+    except cognito.client.exceptions.ExpiredCodeException as exc:
+        raise HTTPException(status_code=400, detail="El codigo expiro, pedi uno nuevo") from exc
+    except cognito.client.exceptions.NotAuthorizedException as exc:
+        raise HTTPException(status_code=400, detail="La cuenta ya esta confirmada") from exc
+
+    return {"detail": "Cuenta confirmada"}
+
+
+@router.post("/resend-code")
+async def resend_code(body: ResendCodeRequest, cognito: CognitoClient = Depends(get_cognito)):
+    try:
+        cognito.resend_confirmation_code(body.email)
+    except cognito.client.exceptions.InvalidParameterException as exc:
+        raise HTTPException(status_code=400, detail="La cuenta ya esta confirmada") from exc
+
+    return {"detail": "Codigo reenviado"}
+
+
 @router.post("/login", response_model=TokenResponse | ChallengeResponse)
 async def login(
     body: LoginRequest,
@@ -38,6 +65,8 @@ async def login(
 ):
     try:
         result = cognito.initiate_auth(body.email, body.password)
+    except cognito.client.exceptions.UserNotConfirmedException as exc:
+        raise HTTPException(status_code=403, detail="Confirma tu cuenta antes de iniciar sesion") from exc
     except cognito.client.exceptions.NotAuthorizedException as exc:
         raise HTTPException(status_code=401, detail="Credenciales invalidas") from exc
 

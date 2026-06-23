@@ -15,7 +15,7 @@ class InstallmentRead(BaseModel):
     description: str
     current_installment: int
     total_installments: int
-    amount_per_installment: Decimal
+    amount_per_installment: float
     currency: CurrencyType
     next_due_date: date | None
 

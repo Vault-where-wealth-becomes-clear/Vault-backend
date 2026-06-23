@@ -22,6 +22,16 @@ class CognitoClient:
         )
         return response["UserSub"]
 
+    def confirm_sign_up(self, email: str, code: str) -> None:
+        self.client.confirm_sign_up(
+            ClientId=self.client_id,
+            Username=email,
+            ConfirmationCode=code,
+        )
+
+    def resend_confirmation_code(self, email: str) -> None:
+        self.client.resend_confirmation_code(ClientId=self.client_id, Username=email)
+
     def initiate_auth(self, email: str, password: str) -> dict:
         return self.client.initiate_auth(
             ClientId=self.client_id,

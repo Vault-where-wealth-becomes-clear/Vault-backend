@@ -8,14 +8,18 @@ from app.aws.s3 import S3Client
 from app.config import settings
 from app.database import AsyncSessionLocal
 from app.models.category_rule import CategoryRule
-from app.models.enums import UploadStatus
+from app.models.enums import SkillModule, UploadStatus
 from app.models.exchange_rate import ExchangeRate
+from app.models.financial_snapshot import FinancialSnapshot
 from app.models.installment import Installment
 from app.models.transaction import Transaction
 from app.models.upload import Upload
-from worker.llm.client import call_llm
-from worker.llm.parser import parse_llm_response
-from worker.llm.prompts import SYSTEM_PROMPT, build_prompt
+from app.models.upload_module_request import UploadModuleRequest
+from app.services.module_dependencies import MODULE_SNAPSHOT_FIELD, resolve_required_modules
+from worker.llm.client import call_llm_with_skill
+from worker.llm.parser import parse_skill_response
+from worker.llm.prompts import ACCOUNT_TYPE_CONTEXT
+from worker.llm.skill_loader import build_skill_system_prompt
 from worker.parser.bank_detector import detect_bank
 from worker.parser.extractor import extract_text
 from worker.processors.confidence import split_by_confidence
@@ -30,6 +34,7 @@ async def process_upload(message: dict) -> None:
     account_type = message["account_type"]
     period_month = date.fromisoformat(message["period_month"])
     s3_key = message["s3_key_pdf"]
+    requested_modules = message.get("requested_modules") or [SkillModule.flujo_mensual.value]
 
     async with AsyncSessionLocal() as db:
         upload = await db.get(Upload, upload_id)
@@ -51,16 +56,26 @@ async def process_upload(message: dict) -> None:
             pending_mep = mep_rate is None
             effective_rate = mep_rate or Decimal("1")
 
-            prompt = build_prompt(account_type, text, category_rules, period_month.strftime("%Y-%m"))
-            raw_response = call_llm(prompt, SYSTEM_PROMPT)
-            transactions = parse_llm_response(raw_response)
+            user_history = await _get_financial_snapshot(db, user_id, period_month)
+            resolved_modules = resolve_required_modules(requested_modules, user_history)
 
+            system_prompt = build_skill_system_prompt(resolved_modules)
+            user_message = _build_user_message(
+                text, account_type, category_rules, period_month.strftime("%Y-%m"), resolved_modules, user_history
+            )
+
+            raw_response = call_llm_with_skill(user_message, system_prompt)
+            result = parse_skill_response(raw_response)
+
+            transactions = result["transacciones"]
             transactions = apply_mep_conversion(transactions, effective_rate)
             installments = extract_installments(transactions)
             auto_txns, review_txns = split_by_confidence(transactions, settings.confidence_threshold)
-
             await _save_transactions(db, upload, auto_txns + review_txns)
             await _save_installments(db, upload, installments)
+
+            await _upsert_financial_snapshot(db, user_id, period_month, result)
+            await _save_module_request_results(db, upload.id, resolved_modules, result)
 
             try:
                 await s3.delete_object(s3_key)
@@ -81,6 +96,37 @@ async def process_upload(message: dict) -> None:
             raise
 
 
+def _build_user_message(
+    text: str,
+    account_type: str,
+    category_rules: dict[str, str],
+    period_month: str,
+    resolved_modules: list[str],
+    user_history: dict | None,
+) -> str:
+    context = ACCOUNT_TYPE_CONTEXT.get(account_type, "")
+    rules_str = ", ".join(f'"{k}": "{v}"' for k, v in category_rules.items())
+    history_str = "ninguno (primer período cargado o sin dependencias resueltas previamente)"
+    if user_history:
+        relevant = {
+            module: user_history[MODULE_SNAPSHOT_FIELD[module]]
+            for module in resolved_modules
+            if MODULE_SNAPSHOT_FIELD.get(module) and user_history.get(MODULE_SNAPSHOT_FIELD[module]) is not None
+        }
+        if relevant:
+            history_str = str(relevant)
+
+    return f"""account_type: {account_type}
+period: {period_month}
+context: {context}
+category_rules_preapply: {{{rules_str}}}
+modulos_a_procesar: {resolved_modules}
+datos_previos_del_periodo_o_historicos: {history_str}
+
+Texto del extracto:
+{text}"""
+
+
 async def _get_category_rules(db, user_id: uuid.UUID) -> dict[str, str]:
     rows = await db.scalars(select(CategoryRule).where(CategoryRule.user_id == user_id))
     return {row.keyword: row.category for row in rows}
@@ -89,6 +135,64 @@ async def _get_category_rules(db, user_id: uuid.UUID) -> dict[str, str]:
 async def _get_mep_rate(db, period_month: date) -> Decimal | None:
     rate = await db.scalar(select(ExchangeRate).where(ExchangeRate.period_month == period_month))
     return rate.mep_rate if rate else None
+
+
+async def _get_financial_snapshot(db, user_id: uuid.UUID, period_month: date) -> dict | None:
+    snapshot = await db.scalar(
+        select(FinancialSnapshot).where(
+            FinancialSnapshot.user_id == user_id, FinancialSnapshot.period_month == period_month
+        )
+    )
+    if snapshot is None:
+        return None
+    return {field: getattr(snapshot, field) for field in MODULE_SNAPSHOT_FIELD.values()}
+
+
+async def _upsert_financial_snapshot(db, user_id: uuid.UUID, period_month: date, result: dict) -> None:
+    snapshot = await db.scalar(
+        select(FinancialSnapshot).where(
+            FinancialSnapshot.user_id == user_id, FinancialSnapshot.period_month == period_month
+        )
+    )
+    if snapshot is None:
+        snapshot = FinancialSnapshot(user_id=user_id, period_month=period_month)
+        db.add(snapshot)
+
+    field_by_module = {
+        SkillModule.flujo_mensual.value: "flujo_mensual",
+        SkillModule.categorizacion_gasto.value: "categorizacion",
+        SkillModule.flujo_periodo.value: "flujo_periodo",
+        SkillModule.cuenta_comitente.value: "cartera",
+        SkillModule.tablero_general.value: "tablero_general",
+        SkillModule.proyeccion_patrimonial.value: "proyeccion",
+        SkillModule.compromisos_futuros.value: "compromisos",
+    }
+    for module_key, snapshot_field in field_by_module.items():
+        if module_key in result:
+            setattr(snapshot, snapshot_field, result[module_key])
+
+    snapshot.updated_at = datetime.utcnow()
+    await db.flush()
+
+
+async def _save_module_request_results(
+    db, upload_id: uuid.UUID, resolved_modules: list[str], result: dict
+) -> None:
+    for module in resolved_modules:
+        existing = await db.scalar(
+            select(UploadModuleRequest).where(
+                UploadModuleRequest.upload_id == upload_id, UploadModuleRequest.module == module
+            )
+        )
+        result_json = result.get(module)
+        if existing is None:
+            existing = UploadModuleRequest(upload_id=upload_id, module=module)
+            db.add(existing)
+        existing.status = UploadStatus.done if result_json is not None else UploadStatus.error
+        existing.result_json = result_json
+        if result_json is None:
+            existing.error_message = "La skill no devolvió datos para este módulo"
+    await db.flush()
 
 
 async def _save_transactions(db, upload: Upload, transactions: list[dict]) -> None:

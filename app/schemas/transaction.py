@@ -1,6 +1,5 @@
 import uuid
 from datetime import date, datetime
-from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -15,11 +14,11 @@ class TransactionRead(BaseModel):
     account_id: uuid.UUID
     date: date
     description: str
-    amount_ars: Decimal
-    amount_usd: Decimal | None
+    amount_ars: float
+    amount_usd: float | None
     currency: CurrencyType
     category: str | None
-    confidence: Decimal | None
+    confidence: float | None
     needs_review: bool
     is_corrected: bool
     created_at: datetime

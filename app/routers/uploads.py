@@ -19,7 +19,12 @@ from app.schemas.upload import (
     UploadRead,
     UploadStatusResponse,
 )
-from app.services.upload_service import build_sqs_message, get_status_payload
+from app.services.upload_service import (
+    build_sqs_message,
+    create_pending_module_requests,
+    get_status_payload,
+    resolve_modules_for_upload,
+)
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
 
@@ -49,6 +54,7 @@ async def generate_presign_url(
         s3_key_pdf=s3_key,
         period_month=body.period_month,
         status="pending",
+        requested_modules=[m.value for m in body.requested_modules],
     )
     db.add(upload)
     await db.flush()
@@ -71,7 +77,13 @@ async def register_upload(
 
     account = await db.scalar(select(Account).where(Account.id == upload.account_id))
 
-    sqs.send_message(build_sqs_message(upload, current_user.id, account.account_type.value))
+    resolved_modules = await resolve_modules_for_upload(
+        db, current_user.id, upload.period_month, upload.requested_modules, current_user.plan.value
+    )
+    await create_pending_module_requests(db, upload.id, resolved_modules)
+    await db.flush()
+
+    sqs.send_message(build_sqs_message(upload, current_user.id, account.account_type.value, resolved_modules))
     return upload
 
 

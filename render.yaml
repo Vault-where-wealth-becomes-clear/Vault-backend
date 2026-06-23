@@ -1,0 +1,41 @@
+services:
+  - type: web
+    name: vault-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: RUN_WORKER_INLINE
+        value: "true"
+      - key: AWS_REGION
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_BUCKET_NAME
+        sync: false
+      - key: SQS_QUEUE_URL
+        sync: false
+      - key: SQS_DLQ_URL
+        sync: false
+      - key: COGNITO_USER_POOL_ID
+        sync: false
+      - key: COGNITO_CLIENT_ID
+        sync: false
+      - key: COGNITO_REGION
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: LLM_MODEL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ENVIRONMENT
+        value: production
+      - key: CONFIDENCE_THRESHOLD
+        value: "0.75"
+      - key: DEBUG
+        value: "false"
+      - key: CORS_ORIGINS
+        value: '["file://", "http://localhost:5173"]'

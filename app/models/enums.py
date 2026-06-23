@@ -39,3 +39,13 @@ class RuleSource(str, enum.Enum):
 class MepSource(str, enum.Enum):
     manual = "manual"
     api = "api"
+
+
+class SkillModule(str, enum.Enum):
+    flujo_mensual = "flujo_mensual"
+    categorizacion_gasto = "categorizacion_gasto"
+    flujo_periodo = "flujo_periodo"
+    cuenta_comitente = "cuenta_comitente"
+    tablero_general = "tablero_general"
+    proyeccion_patrimonial = "proyeccion_patrimonial"
+    compromisos_futuros = "compromisos_futuros"

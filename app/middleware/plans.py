@@ -25,6 +25,35 @@ PLAN_FEATURES = {
 }
 
 
+PLAN_MODULE_ACCESS = {
+    "free": ["flujo_mensual", "categorizacion_gasto"],
+    "pro": [
+        "flujo_mensual",
+        "categorizacion_gasto",
+        "flujo_periodo",
+        "cuenta_comitente",
+        "tablero_general",
+        "proyeccion_patrimonial",
+        "compromisos_futuros",
+    ],
+    "family": [
+        "flujo_mensual",
+        "categorizacion_gasto",
+        "flujo_periodo",
+        "cuenta_comitente",
+        "tablero_general",
+        "proyeccion_patrimonial",
+        "compromisos_futuros",
+    ],
+}
+
+
+def filter_modules_by_plan(requested: list[str], user_plan: str) -> list[str]:
+    """Si el usuario Free pide un módulo Pro, se filtra silenciosamente y se avisa en la respuesta."""
+    allowed = PLAN_MODULE_ACCESS.get(user_plan, [])
+    return [m for m in requested if m in allowed]
+
+
 def require_plan(*plans: str):
     """Dependency factory: valida que el usuario actual tenga uno de los planes dados."""
     from fastapi import Depends, HTTPException

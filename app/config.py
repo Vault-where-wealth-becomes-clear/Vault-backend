@@ -28,8 +28,13 @@ class Settings(BaseSettings):
     environment: str = "development"
     confidence_threshold: float = 0.75
     debug: bool = True
-    cors_origins: list[str] = ["http://localhost:5173"]
+    cors_origins: list[str] = ["http://localhost:5173", "file://"]
     app_version: str = "0.1.0"
+
+    # Worker: en local corre como proceso separado (worker/run.py). En hosting
+    # gratuito sin un segundo servicio disponible, se corre en un thread daemon
+    # dentro del mismo proceso de la API (ver app/main.py lifespan).
+    run_worker_inline: bool = False
 
 
 settings = Settings()

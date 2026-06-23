@@ -5,6 +5,7 @@ from decimal import Decimal
 from sqlalchemy import extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.financial_snapshot import FinancialSnapshot
 from app.models.transaction import Transaction
 
 
@@ -76,3 +77,68 @@ def generate_insights(
         insights.append(f"Tu patrimonio {direction} USD {abs(portfolio_change):,.0f} este mes")
 
     return insights
+
+
+def generate_snapshot_insights(
+    snapshot: FinancialSnapshot | None,
+    previous_snapshot: FinancialSnapshot | None,
+) -> list[str]:
+    """
+    Templates en texto sobre los módulos de la skill, SIN llamar a Claude.
+    Solo agrega insights para los módulos que efectivamente se hayan calculado.
+    """
+    insights: list[str] = []
+    if snapshot is None:
+        return insights
+
+    if snapshot.categorizacion and previous_snapshot and previous_snapshot.categorizacion:
+        insights += _compare_categories(snapshot.categorizacion, previous_snapshot.categorizacion)
+
+    if snapshot.cartera:
+        insights += _cartera_insights(snapshot.cartera)
+
+    if snapshot.proyeccion:
+        insights += _proyeccion_insights(snapshot.proyeccion)
+
+    if snapshot.tablero_general and snapshot.tablero_general.get("alertas"):
+        insights += [_translate_alert(a) for a in snapshot.tablero_general["alertas"]]
+
+    return insights
+
+
+def _compare_categories(categorizacion: dict, previous_categorizacion: dict) -> list[str]:
+    insights = []
+    current_by_category = categorizacion.get("gasto_neto_por_categoria", {})
+    previous_by_category = previous_categorizacion.get("gasto_neto_por_categoria", {})
+    for category, amount in current_by_category.items():
+        prev_amount = previous_by_category.get(category, 0)
+        if prev_amount:
+            diff_pct = ((amount - prev_amount) / prev_amount) * 100
+            if diff_pct > 20:
+                insights.append(f"Gastaste {diff_pct:.0f}% mas en {category} que el mes pasado")
+            elif diff_pct < -20:
+                insights.append(f"Gastaste {abs(diff_pct):.0f}% menos en {category} que el mes pasado")
+    return insights
+
+
+def _cartera_insights(cartera: dict) -> list[str]:
+    insights = []
+    posiciones = cartera.get("posiciones", [])
+    total_pl = sum(p.get("pl_periodo", 0) for p in posiciones)
+    if total_pl > 0:
+        insights.append(f"Tu cartera tuvo un resultado positivo de ${total_pl:,.0f} en el período")
+    elif total_pl < 0:
+        insights.append(f"Tu cartera tuvo un resultado negativo de ${abs(total_pl):,.0f} en el período")
+    return insights
+
+
+def _proyeccion_insights(proyeccion: dict) -> list[str]:
+    insights = []
+    banda_media = proyeccion.get("banda_media")
+    if banda_media is not None:
+        insights.append(f"Proyectamos un patrimonio liquido de ${banda_media:,.0f} dentro de 3 meses")
+    return insights
+
+
+def _translate_alert(alert: str) -> str:
+    return alert

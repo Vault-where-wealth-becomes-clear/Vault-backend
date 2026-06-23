@@ -27,5 +27,5 @@ class AccountRead(BaseModel):
     account_type: AccountType
     institution: str | None
     currency: CurrencyType
-    current_balance: Decimal
+    current_balance: float
     is_active: bool

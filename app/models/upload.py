@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, Enum, ForeignKey, String, Text, text
+from sqlalchemy import ARRAY, Boolean, Date, Enum, ForeignKey, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,6 +29,9 @@ class Upload(Base):
     )
     detected_bank: Mapped[str | None] = mapped_column(String(255))
     pending_mep: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    requested_modules: Mapped[list[str]] = mapped_column(
+        ARRAY(String(50)), nullable=False, server_default=text("ARRAY['flujo_mensual']")
+    )
     error_message: Mapped[str | None] = mapped_column(Text)
     uploaded_at: Mapped[datetime] = mapped_column(server_default=text("NOW()"))
     processed_at: Mapped[datetime | None] = mapped_column()

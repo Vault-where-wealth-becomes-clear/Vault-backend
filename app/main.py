@@ -1,3 +1,6 @@
+import threading
+from contextlib import asynccontextmanager
+
 import structlog
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,7 +32,22 @@ structlog.configure(
 )
 logger = structlog.get_logger()
 
-app = FastAPI(title="Vault API", version=settings.app_version)
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    if settings.run_worker_inline:
+        # Hostings gratuitos no siempre ofrecen un segundo servicio (worker)
+        # sin costo. Corremos el long-polling de SQS en un thread daemon dentro
+        # del mismo proceso de la API en vez de exigir un proceso separado.
+        from worker.run import poll_loop
+
+        thread = threading.Thread(target=poll_loop, daemon=True, name="sqs-worker")
+        thread.start()
+        logger.info("inline_worker_started")
+    yield
+
+
+app = FastAPI(title="Vault API", version=settings.app_version, lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -53,10 +71,18 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     logger.error("unhandled_exception", path=request.url.path, error=str(exc))
-    return JSONResponse(
+    response = JSONResponse(
         status_code=500,
         content={"error": "Error interno del servidor", "code": "500"},
     )
+    # Los handlers de Exception "pelada" corren en ServerErrorMiddleware, por fuera
+    # de CORSMiddleware — sin este header el browser muestra un falso error de CORS
+    # en vez del 500 real. Ver: https://github.com/tiangolo/fastapi/discussions/4934
+    origin = request.headers.get("origin")
+    if origin in settings.cors_origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response
 
 
 app.include_router(health.router)

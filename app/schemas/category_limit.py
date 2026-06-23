@@ -18,6 +18,6 @@ class CategoryLimitRead(BaseModel):
 
     id: uuid.UUID
     category: str
-    limit_amount: Decimal
+    limit_amount: float
     currency: CurrencyType
     alert_at_pct: int

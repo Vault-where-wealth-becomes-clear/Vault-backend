@@ -12,6 +12,15 @@ class RegisterResponse(BaseModel):
     email: EmailStr
 
 
+class ConfirmRequest(BaseModel):
+    email: EmailStr
+    code: str
+
+
+class ResendCodeRequest(BaseModel):
+    email: EmailStr
+
+
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
