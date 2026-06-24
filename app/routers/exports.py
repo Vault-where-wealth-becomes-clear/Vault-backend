@@ -19,7 +19,8 @@ class ExportXlsxResponse(BaseModel):
 
 @router.post("/xlsx", response_model=ExportXlsxResponse)
 async def export_xlsx(
-    current_user: User = Depends(require_plan("pro", "family")),
+    # BETA: sin restriccion de plan, ver app/middleware/plans.py
+    current_user: User = Depends(require_plan("free", "pro", "family")),
     db: AsyncSession = Depends(get_db),
     s3: S3Client = Depends(get_s3),
 ):

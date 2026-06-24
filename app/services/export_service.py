@@ -17,7 +17,7 @@ async def build_transactions_xlsx(db: AsyncSession, user_id: uuid.UUID) -> bytes
     workbook = openpyxl.Workbook()
     sheet = workbook.active
     sheet.title = "Transacciones"
-    sheet.append(["Fecha", "Descripcion", "Monto ARS", "Monto USD", "Categoria", "Confianza"])
+    sheet.append(["Fecha", "Descripción", "Monto ARS", "Monto USD", "Categoría", "Confianza"])
 
     for tx in result:
         sheet.append(

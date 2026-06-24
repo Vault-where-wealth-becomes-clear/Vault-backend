@@ -70,4 +70,5 @@ async def get_status_payload(db: AsyncSession, upload: Upload) -> dict:
         "error_message": upload.error_message,
         "processed_at": upload.processed_at,
         "review_count": review_count,
+        "pending_mep": upload.pending_mep,
     }

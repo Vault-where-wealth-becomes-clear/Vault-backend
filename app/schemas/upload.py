@@ -43,6 +43,7 @@ class UploadRead(BaseModel):
     detected_bank: str | None
     error_message: str | None
     requested_modules: list[str]
+    pending_mep: bool
     uploaded_at: datetime
     processed_at: datetime | None
 
@@ -53,3 +54,4 @@ class UploadStatusResponse(BaseModel):
     error_message: str | None
     processed_at: datetime | None
     review_count: int | None = None
+    pending_mep: bool = False

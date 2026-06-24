@@ -1,10 +1,14 @@
+# BETA: todas las features estan desbloqueadas para todos los planes sin costo.
+# La estructura de planes se deja intacta (no se borra) para no tener que
+# rediseñarla cuando se reintroduzca el cobro despues del testeo — solo
+# cambian los valores a "todo permitido".
 PLAN_FEATURES = {
     "free": {
-        "max_accounts": 1,
-        "ai_processing": False,
-        "broker_support": False,
-        "export_xlsx": False,
-        "history_days": 30,
+        "max_accounts": None,
+        "ai_processing": True,
+        "broker_support": True,
+        "export_xlsx": True,
+        "history_days": None,
     },
     "pro": {
         "max_accounts": None,
@@ -25,26 +29,20 @@ PLAN_FEATURES = {
 }
 
 
+_ALL_MODULES = [
+    "flujo_mensual",
+    "categorizacion_gasto",
+    "flujo_periodo",
+    "cuenta_comitente",
+    "tablero_general",
+    "proyeccion_patrimonial",
+    "compromisos_futuros",
+]
+
 PLAN_MODULE_ACCESS = {
-    "free": ["flujo_mensual", "categorizacion_gasto"],
-    "pro": [
-        "flujo_mensual",
-        "categorizacion_gasto",
-        "flujo_periodo",
-        "cuenta_comitente",
-        "tablero_general",
-        "proyeccion_patrimonial",
-        "compromisos_futuros",
-    ],
-    "family": [
-        "flujo_mensual",
-        "categorizacion_gasto",
-        "flujo_periodo",
-        "cuenta_comitente",
-        "tablero_general",
-        "proyeccion_patrimonial",
-        "compromisos_futuros",
-    ],
+    "free": _ALL_MODULES,
+    "pro": _ALL_MODULES,
+    "family": _ALL_MODULES,
 }
 
 
