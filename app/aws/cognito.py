@@ -57,6 +57,13 @@ class CognitoClient:
     def global_sign_out(self, access_token: str) -> None:
         self.client.global_sign_out(AccessToken=access_token)
 
+    def change_password(self, access_token: str, old_password: str, new_password: str) -> None:
+        self.client.change_password(
+            AccessToken=access_token,
+            PreviousPassword=old_password,
+            ProposedPassword=new_password,
+        )
+
     def admin_delete_user(self, email: str) -> None:
         try:
             self.client.admin_delete_user(UserPoolId=self.user_pool_id, Username=email)

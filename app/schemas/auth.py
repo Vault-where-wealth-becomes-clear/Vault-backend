@@ -46,3 +46,8 @@ class TokenResponse(BaseModel):
 class ChallengeResponse(BaseModel):
     challenge_name: str
     session: str
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str

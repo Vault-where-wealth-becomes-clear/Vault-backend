@@ -1,5 +1,6 @@
 import uuid
 from datetime import date
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -7,14 +8,60 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.middleware.auth import get_current_user
+from app.models.account import Account
 from app.models.category_rule import CategoryRule
-from app.models.enums import RuleSource, UploadStatus
+from app.models.enums import CurrencyType, RuleSource, UploadStatus
 from app.models.transaction import Transaction
 from app.models.upload import Upload
 from app.models.user import User
-from app.schemas.transaction import TransactionRead, TransactionUpdate
+from app.schemas.transaction import TransactionCreate, TransactionRead, TransactionUpdate
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
+
+
+@router.post("/manual", response_model=TransactionRead, status_code=201)
+async def create_manual_transaction(
+    body: TransactionCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    account = await db.scalar(
+        select(Account).where(Account.id == body.account_id, Account.user_id == current_user.id)
+    )
+    if not account:
+        raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+
+    sign = Decimal("1") if body.transaction_type == "ingreso" else Decimal("-1")
+    signed = Decimal(str(abs(body.amount))) * sign
+
+    if body.currency == CurrencyType.USD:
+        amount_ars = Decimal("0")
+        amount_usd = signed
+    else:
+        amount_ars = signed
+        amount_usd = None
+
+    transaction = Transaction(
+        user_id=current_user.id,
+        account_id=body.account_id,
+        upload_id=None,
+        date=body.date,
+        description=body.description or "Movimiento manual",
+        amount_ars=amount_ars,
+        amount_usd=amount_usd,
+        currency=body.currency,
+        category=body.category,
+        confidence=Decimal("1.0"),
+        needs_review=False,
+        is_corrected=True,
+    )
+    db.add(transaction)
+
+    # Actualiza el saldo de la cuenta
+    account.current_balance = (account.current_balance or Decimal("0")) + signed
+
+    await db.flush()
+    return transaction
 
 
 @router.get("", response_model=list[TransactionRead])

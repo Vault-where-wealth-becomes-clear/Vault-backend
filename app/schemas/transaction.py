@@ -1,5 +1,6 @@
 import uuid
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -10,7 +11,7 @@ class TransactionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    upload_id: uuid.UUID
+    upload_id: uuid.UUID | None
     account_id: uuid.UUID
     date: date
     description: str
@@ -27,3 +28,13 @@ class TransactionRead(BaseModel):
 class TransactionUpdate(BaseModel):
     category: str
     remember_rule: bool = False
+
+
+class TransactionCreate(BaseModel):
+    account_id: uuid.UUID
+    date: date
+    description: str
+    amount: float
+    currency: CurrencyType
+    category: str | None = None
+    transaction_type: Literal["ingreso", "egreso"] = "egreso"

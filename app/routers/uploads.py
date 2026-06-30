@@ -28,6 +28,17 @@ from app.services.upload_service import (
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
 
+_CONTENT_TYPES = {
+    "pdf": "application/pdf",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "xls": "application/vnd.ms-excel",
+}
+
+
+def _content_type(filename: str) -> str:
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    return _CONTENT_TYPES.get(ext, "application/octet-stream")
+
 
 @router.post("/presign", response_model=PresignResponse)
 @limiter.limit("10/hour")
@@ -46,7 +57,8 @@ async def generate_presign_url(
 
     extension = body.filename.rsplit(".", 1)[-1].lower() if "." in body.filename else "pdf"
     s3_key = f"uploads/{current_user.id}/{body.period_month:%Y-%m}/{uuid.uuid4()}.{extension}"
-    presigned_url = await s3.generate_presigned_url(s3_key, expires_in=300)
+    content_type = _content_type(body.filename)
+    presigned_url = await s3.generate_presigned_url(s3_key, content_type, expires_in=300)
 
     upload = Upload(
         user_id=current_user.id,
@@ -59,7 +71,12 @@ async def generate_presign_url(
     db.add(upload)
     await db.flush()
 
-    return PresignResponse(upload_id=upload.id, presigned_url=presigned_url, s3_key=s3_key)
+    return PresignResponse(
+        upload_id=upload.id,
+        presigned_url=presigned_url,
+        s3_key=s3_key,
+        content_type=content_type,
+    )
 
 
 @router.post("", response_model=UploadRead, status_code=201)
