@@ -50,7 +50,7 @@ async def create_manual_transaction(
         amount_ars=amount_ars,
         amount_usd=amount_usd,
         currency=body.currency,
-        category=body.category,
+        category=body.category.capitalize() if body.category else None,
         confidence=Decimal("1.0"),
         needs_review=False,
         is_corrected=True,
@@ -102,7 +102,7 @@ async def correct_transaction(
     if not transaction:
         raise HTTPException(status_code=404, detail="Transaccion no encontrada")
 
-    transaction.category = body.category
+    transaction.category = body.category.capitalize() if body.category else None
     transaction.is_corrected = True
     transaction.needs_review = False
 
@@ -114,13 +114,13 @@ async def correct_transaction(
             )
         )
         if rule:
-            rule.category = body.category
+            rule.category = body.category.capitalize() if body.category else None
         else:
             db.add(
                 CategoryRule(
                     user_id=current_user.id,
                     keyword=keyword,
-                    category=body.category,
+                    category=body.category.capitalize() if body.category else None,
                     source=RuleSource.user,
                 )
             )
