@@ -42,7 +42,7 @@ from app.models.exchange_rate import ExchangeRate
 from app.models.transaction import Transaction
 from app.models.user import User
 
-TEST_EMAIL = "testuser@vault.local"
+TEST_EMAIL = "testuser@vaultapp.dev"
 TEST_NAME = "Test User"
 TEST_PASSWORD = "testUser1!"
 
@@ -101,44 +101,92 @@ MONTHLY_ARS_TRANSACTIONS: list[tuple[str, int, str]] = [
 ]
 
 
-def _get_cognito_sub(cognito, email: str) -> str | None:
-    try:
-        resp = cognito.admin_get_user(UserPoolId=settings.cognito_user_pool_id, Username=email)
-        for attr in resp["UserAttributes"]:
-            if attr["Name"] == "sub":
-                return attr["Value"]
-    except ClientError as e:
-        if e.response["Error"]["Code"] == "UserNotFoundException":
-            return None
-        raise
-    return None
-
-
 def create_cognito_user(cognito) -> str:
-    """Creates the user in Cognito and returns the cognito_sub."""
-    existing_sub = _get_cognito_sub(cognito, TEST_EMAIL)
-    if existing_sub:
-        print(f"  Cognito user already exists (sub={existing_sub[:8]}...)")
-        return existing_sub
+    """
+    Creates the user via client-side sign_up (no IAM admin permissions needed).
+    Then tries admin_confirm_sign_up + admin_set_user_password — these require
+    cognito-idp:AdminConfirmSignUp and cognito-idp:AdminSetUserPassword on vault-dev.
+    If they fail, instructions are printed and the script exits.
+    """
+    sub: str | None = None
 
-    resp = cognito.admin_create_user(
-        UserPoolId=settings.cognito_user_pool_id,
-        Username=TEST_EMAIL,
-        UserAttributes=[
-            {"Name": "email", "Value": TEST_EMAIL},
-            {"Name": "email_verified", "Value": "true"},
-            {"Name": "name", "Value": TEST_NAME},
-        ],
-        MessageAction="SUPPRESS",  # don't send welcome email
-    )
-    sub = next(attr["Value"] for attr in resp["User"]["Attributes"] if attr["Name"] == "sub")
-    cognito.admin_set_user_password(
-        UserPoolId=settings.cognito_user_pool_id,
-        Username=TEST_EMAIL,
-        Password=TEST_PASSWORD,
-        Permanent=True,
-    )
-    print(f"  Cognito user created (sub={sub[:8]}...)")
+    # 1. sign_up — no IAM required
+    try:
+        resp = cognito.sign_up(
+            ClientId=settings.cognito_client_id,
+            Username=TEST_EMAIL,
+            Password=TEST_PASSWORD,
+            UserAttributes=[
+                {"Name": "email", "Value": TEST_EMAIL},
+                {"Name": "name", "Value": TEST_NAME},
+            ],
+        )
+        sub = resp["UserSub"]
+        print(f"  Cognito user registered (sub={sub[:8]}...)")
+    except ClientError as e:
+        code = e.response["Error"]["Code"]
+        if code == "UsernameExistsException":
+            print("  Cognito user already exists — attempting to get sub via auth...")
+            # Try initiating auth to get the sub from the token
+            try:
+                auth_resp = cognito.initiate_auth(
+                    ClientId=settings.cognito_client_id,
+                    AuthFlow="USER_PASSWORD_AUTH",
+                    AuthParameters={"USERNAME": TEST_EMAIL, "PASSWORD": TEST_PASSWORD},
+                )
+                id_token = auth_resp.get("AuthenticationResult", {}).get("IdToken")
+                if id_token:
+                    import base64
+                    import json
+
+                    payload = id_token.split(".")[1]
+                    payload += "=" * (4 - len(payload) % 4)
+                    claims = json.loads(base64.b64decode(payload))
+                    sub = claims.get("sub")
+                    print(f"  Retrieved sub from existing login (sub={sub[:8] if sub else '?'}...)")
+            except ClientError:
+                pass
+            if not sub:
+                print("\n  ✗ User exists in Cognito but couldn't retrieve sub.")
+                print("    Run with --reset to delete and recreate.")
+                sys.exit(1)
+            return sub
+        raise
+
+    # 2. admin_confirm_sign_up — needs IAM permission cognito-idp:AdminConfirmSignUp
+    try:
+        cognito.admin_confirm_sign_up(
+            UserPoolId=settings.cognito_user_pool_id,
+            Username=TEST_EMAIL,
+        )
+        print("  Email confirmed via admin API")
+    except ClientError as e:
+        if "AccessDeniedException" in str(e) or "NotAuthorizedException" in str(e):
+            print("\n  ✗ Falta permiso IAM: cognito-idp:AdminConfirmSignUp en vault-dev")
+            print("    En AWS Console → IAM → Users → vault-dev → Add permissions:")
+            print("    Agregar política gestionada: AmazonCognitoPowerUser")
+            print("    Luego volver a correr este script.")
+            sys.exit(1)
+        raise
+
+    # 3. admin_set_user_password — sets permanent password (no FORCE_CHANGE_PASSWORD state)
+    try:
+        cognito.admin_set_user_password(
+            UserPoolId=settings.cognito_user_pool_id,
+            Username=TEST_EMAIL,
+            Password=TEST_PASSWORD,
+            Permanent=True,
+        )
+        print("  Password set as permanent")
+    except ClientError as e:
+        if "AccessDeniedException" in str(e) or "NotAuthorizedException" in str(e):
+            print("\n  ✗ Falta permiso IAM: cognito-idp:AdminSetUserPassword en vault-dev")
+            print("    En AWS Console → IAM → Users → vault-dev → Add permissions:")
+            print("    Agregar política gestionada: AmazonCognitoPowerUser")
+            sys.exit(1)
+        raise
+
+    print(f"  Cognito user ready (sub={sub[:8]}...)")
     return sub
 
 
@@ -147,7 +195,12 @@ def delete_cognito_user(cognito) -> None:
         cognito.admin_delete_user(UserPoolId=settings.cognito_user_pool_id, Username=TEST_EMAIL)
         print("  Cognito user deleted")
     except ClientError as e:
-        if e.response["Error"]["Code"] != "UserNotFoundException":
+        code = e.response["Error"]["Code"]
+        if code == "UserNotFoundException":
+            pass
+        elif "AccessDeniedException" in str(e):
+            print("  ⚠ No se pudo eliminar de Cognito (sin permiso AdminDeleteUser) — omitiendo")
+        else:
             raise
 
 
