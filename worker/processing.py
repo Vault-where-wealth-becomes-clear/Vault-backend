@@ -216,7 +216,7 @@ async def _save_transactions(db, upload: Upload, transactions: list[dict]) -> No
             amount_ars=txn["amount_ars"],
             amount_usd=txn["amount_usd"],
             currency=txn.get("currency", "ARS"),
-            category=txn.get("category"),
+            category=txn.get("category", "").capitalize() or None,
             confidence=Decimal(str(txn.get("confidence", 0))),
             needs_review=txn["needs_review"],
         )

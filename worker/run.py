@@ -23,10 +23,11 @@ from app.config import settings
 from worker.processing import process_upload
 
 
-def poll_loop() -> None:
+async def poll_loop() -> None:
     if not settings.sqs_queue_url:
         raise SystemExit("SQS_QUEUE_URL no esta configurado en .env")
 
+    loop = asyncio.get_running_loop()
     sqs = boto3.client(
         "sqs",
         region_name=settings.aws_region,
@@ -36,19 +37,26 @@ def poll_loop() -> None:
 
     print(f"[worker] escuchando {settings.sqs_queue_url}")
     while True:
-        response = sqs.receive_message(
-            QueueUrl=settings.sqs_queue_url,
-            MaxNumberOfMessages=1,
-            WaitTimeSeconds=10,
+        response = await loop.run_in_executor(
+            None,
+            lambda: sqs.receive_message(
+                QueueUrl=settings.sqs_queue_url,
+                MaxNumberOfMessages=1,
+                WaitTimeSeconds=10,
+            ),
         )
         for message in response.get("Messages", []):
             body = json.loads(message["Body"])
             upload_id = body.get("upload_id")
             print(f"[worker] procesando upload {upload_id}")
             try:
-                asyncio.run(process_upload(body))
-                sqs.delete_message(
-                    QueueUrl=settings.sqs_queue_url, ReceiptHandle=message["ReceiptHandle"]
+                await process_upload(body)
+                await loop.run_in_executor(
+                    None,
+                    lambda: sqs.delete_message(
+                        QueueUrl=settings.sqs_queue_url,
+                        ReceiptHandle=message["ReceiptHandle"],
+                    ),
                 )
                 print(f"[worker] upload {upload_id} terminado")
             except Exception:
@@ -57,4 +65,4 @@ def poll_loop() -> None:
 
 
 if __name__ == "__main__":
-    poll_loop()
+    asyncio.run(poll_loop())

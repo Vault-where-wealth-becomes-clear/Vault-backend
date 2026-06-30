@@ -24,7 +24,7 @@ def call_llm_with_skill(prompt: str, system: str) -> str:
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
     message = client.messages.create(
         model=settings.llm_model,
-        max_tokens=8192,
+        max_tokens=16000,
         system=[
             {
                 "type": "text",

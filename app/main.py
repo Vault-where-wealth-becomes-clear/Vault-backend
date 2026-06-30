@@ -39,9 +39,13 @@ async def lifespan(_: FastAPI):
         # Hostings gratuitos no siempre ofrecen un segundo servicio (worker)
         # sin costo. Corremos el long-polling de SQS en un thread daemon dentro
         # del mismo proceso de la API en vez de exigir un proceso separado.
+        import asyncio
+
         from worker.run import poll_loop
 
-        thread = threading.Thread(target=poll_loop, daemon=True, name="sqs-worker")
+        thread = threading.Thread(
+            target=lambda: asyncio.run(poll_loop()), daemon=True, name="sqs-worker"
+        )
         thread.start()
         logger.info("inline_worker_started")
     yield
