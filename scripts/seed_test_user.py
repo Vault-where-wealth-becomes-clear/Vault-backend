@@ -30,7 +30,7 @@ from decimal import Decimal
 
 import boto3
 from botocore.exceptions import ClientError
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 sys.path.insert(0, ".")
@@ -304,7 +304,7 @@ async def seed(db: AsyncSession, cognito_sub: str) -> None:
 
 async def main(reset: bool) -> None:
     engine = create_async_engine(settings.database_url, echo=False)
-    Session = async_sessionmaker(engine, expire_on_commit=False)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
     cognito = boto3.client(
         "cognito-idp",
@@ -319,7 +319,7 @@ async def main(reset: bool) -> None:
     cognito_sub = create_cognito_user(cognito)
 
     print("── Database ─────────────────────────────────────")
-    async with Session() as db:
+    async with session_factory() as db:
         if reset:
             await reset_db_user(db, TEST_EMAIL)
         await seed(db, cognito_sub)
