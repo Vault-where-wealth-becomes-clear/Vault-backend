@@ -5,6 +5,8 @@ from decimal import Decimal
 from sqlalchemy import extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.account import Account
+from app.models.enums import AccountType, CurrencyType
 from app.models.financial_snapshot import FinancialSnapshot
 from app.models.transaction import Transaction
 
@@ -46,6 +48,19 @@ async def get_month_summary(db: AsyncSession, user_id, period_month: date) -> Mo
             expense_ars += total_ars
 
     savings = income_ars + expense_ars  # expense_ars ya es negativo
+
+    # Incluir saldo de cuentas que no generan transacciones (efectivo y cripto en USD)
+    cash_rows = await db.execute(
+        select(Account.current_balance, Account.currency).where(
+            Account.user_id == user_id,
+            Account.is_active.is_(True),
+            Account.account_type.in_([AccountType.cash, AccountType.crypto]),
+            Account.currency == CurrencyType.USD,
+        )
+    )
+    for balance, _ in cash_rows:
+        total_usd += balance or Decimal("0")
+
     return MonthSummary(total_usd=total_usd, savings=savings, by_category=by_category)
 
 

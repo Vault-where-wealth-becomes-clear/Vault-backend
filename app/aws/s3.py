@@ -13,10 +13,12 @@ class S3Client:
         )
         self.bucket = settings.s3_bucket_name
 
-    async def generate_presigned_url(self, key: str, expires_in: int = 300) -> str:
+    async def generate_presigned_url(
+        self, key: str, content_type: str, expires_in: int = 300
+    ) -> str:
         return self.client.generate_presigned_url(
             "put_object",
-            Params={"Bucket": self.bucket, "Key": key},
+            Params={"Bucket": self.bucket, "Key": key, "ContentType": content_type},
             ExpiresIn=expires_in,
         )
 

@@ -7,6 +7,7 @@ from app.database import get_db
 from app.middleware.auth import security
 from app.schemas.auth import (
     ChallengeResponse,
+    ChangePasswordRequest,
     ConfirmRequest,
     LoginRequest,
     RefreshRequest,
@@ -105,6 +106,27 @@ async def refresh(body: RefreshRequest, cognito: CognitoClient = Depends(get_cog
         id_token=auth_result.get("IdToken"),
         refresh_token=body.refresh_token,
     )
+
+
+@router.post("/change-password")
+async def change_password(
+    body: ChangePasswordRequest,
+    credentials=Depends(security),
+    cognito: CognitoClient = Depends(get_cognito),
+):
+    try:
+        cognito.change_password(credentials.credentials, body.old_password, body.new_password)
+    except cognito.client.exceptions.NotAuthorizedException as exc:
+        raise HTTPException(status_code=400, detail="Contraseña actual incorrecta") from exc
+    except cognito.client.exceptions.InvalidPasswordException as exc:
+        raise HTTPException(
+            status_code=400, detail="La nueva contraseña no cumple los requisitos de seguridad"
+        ) from exc
+    except cognito.client.exceptions.LimitExceededException as exc:
+        raise HTTPException(
+            status_code=429, detail="Demasiados intentos. Intentá más tarde"
+        ) from exc
+    return {"detail": "Contraseña actualizada"}
 
 
 @router.post("/logout")

@@ -26,6 +26,7 @@ class PresignResponse(BaseModel):
     upload_id: uuid.UUID
     presigned_url: str
     s3_key: str
+    content_type: str
 
 
 class UploadCreate(BaseModel):
