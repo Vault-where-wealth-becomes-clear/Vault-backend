@@ -18,9 +18,7 @@ async def list_category_rules(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.scalars(
-        select(CategoryRule).where(CategoryRule.user_id == current_user.id)
-    )
+    result = await db.scalars(select(CategoryRule).where(CategoryRule.user_id == current_user.id))
     return result.all()
 
 
@@ -38,7 +36,9 @@ async def create_category_rule(
     if existing:
         raise HTTPException(status_code=409, detail="Ya existe una regla para ese keyword")
 
-    rule = CategoryRule(user_id=current_user.id, keyword=body.keyword, category=body.category, source="user")
+    rule = CategoryRule(
+        user_id=current_user.id, keyword=body.keyword, category=body.category, source="user"
+    )
     db.add(rule)
     await db.flush()
     return rule
@@ -51,7 +51,9 @@ async def delete_category_rule(
     db: AsyncSession = Depends(get_db),
 ):
     rule = await db.scalar(
-        select(CategoryRule).where(CategoryRule.id == rule_id, CategoryRule.user_id == current_user.id)
+        select(CategoryRule).where(
+            CategoryRule.id == rule_id, CategoryRule.user_id == current_user.id
+        )
     )
     if not rule:
         raise HTTPException(status_code=404, detail="Regla no encontrada")

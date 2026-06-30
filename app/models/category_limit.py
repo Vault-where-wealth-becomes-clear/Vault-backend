@@ -11,7 +11,9 @@ from app.models.enums import CurrencyType
 
 class CategoryLimit(Base):
     __tablename__ = "category_limits"
-    __table_args__ = (UniqueConstraint("user_id", "category", name="uq_category_limits_user_category"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "category", name="uq_category_limits_user_category"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()")

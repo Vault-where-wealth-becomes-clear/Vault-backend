@@ -36,7 +36,9 @@ async def build_transactions_xlsx(db: AsyncSession, user_id: uuid.UUID) -> bytes
     return buffer.getvalue()
 
 
-async def export_transactions_to_s3(db: AsyncSession, s3: S3Client, user_id: uuid.UUID, period_month: str) -> str:
+async def export_transactions_to_s3(
+    db: AsyncSession, s3: S3Client, user_id: uuid.UUID, period_month: str
+) -> str:
     content = await build_transactions_xlsx(db, user_id)
     key = f"exports/{user_id}/{period_month}/export.xlsx"
     s3.client.put_object(

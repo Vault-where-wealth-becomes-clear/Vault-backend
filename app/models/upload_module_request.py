@@ -11,7 +11,9 @@ from app.models.enums import SkillModule, UploadStatus
 
 class UploadModuleRequest(Base):
     __tablename__ = "upload_module_requests"
-    __table_args__ = (UniqueConstraint("upload_id", "module", name="uq_upload_module_requests_upload_module"),)
+    __table_args__ = (
+        UniqueConstraint("upload_id", "module", name="uq_upload_module_requests_upload_module"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()")
@@ -19,7 +21,9 @@ class UploadModuleRequest(Base):
     upload_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("uploads.id", ondelete="CASCADE"), nullable=False
     )
-    module: Mapped[SkillModule] = mapped_column(Enum(SkillModule, name="skill_module"), nullable=False)
+    module: Mapped[SkillModule] = mapped_column(
+        Enum(SkillModule, name="skill_module"), nullable=False
+    )
     status: Mapped[UploadStatus] = mapped_column(
         Enum(UploadStatus, name="upload_status"), nullable=False, default=UploadStatus.pending
     )

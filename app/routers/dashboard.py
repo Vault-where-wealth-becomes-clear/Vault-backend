@@ -94,7 +94,9 @@ async def get_evolution(
 
     for _ in range(12):
         summary = await get_month_summary(db, current_user.id, period_month)
-        points.append(EvolutionPoint(month=period_month.strftime("%Y-%m"), total_usd=summary.total_usd))
+        points.append(
+            EvolutionPoint(month=period_month.strftime("%Y-%m"), total_usd=summary.total_usd)
+        )
         period_month = _previous_month(period_month)
 
     points.reverse()

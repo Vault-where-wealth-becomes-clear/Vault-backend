@@ -21,7 +21,9 @@ async def count_review_items(db: AsyncSession, upload_id: uuid.UUID) -> int:
     )
 
 
-def build_sqs_message(upload: Upload, user_id: uuid.UUID, account_type: str, resolved_modules: list[str]) -> dict:
+def build_sqs_message(
+    upload: Upload, user_id: uuid.UUID, account_type: str, resolved_modules: list[str]
+) -> dict:
     return {
         "upload_id": str(upload.id),
         "user_id": str(user_id),
@@ -33,7 +35,11 @@ def build_sqs_message(upload: Upload, user_id: uuid.UUID, account_type: str, res
 
 
 async def resolve_modules_for_upload(
-    db: AsyncSession, user_id: uuid.UUID, period_month: date, requested_modules: list[str], user_plan: str
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    period_month: date,
+    requested_modules: list[str],
+    user_plan: str,
 ) -> list[str]:
     """
     Filtra por plan y agrega dependencias no satisfechas por el histórico del período,
@@ -47,13 +53,17 @@ async def resolve_modules_for_upload(
         )
     )
     user_history = (
-        {field: getattr(snapshot, field) for field in MODULE_SNAPSHOT_FIELD.values()} if snapshot else None
+        {field: getattr(snapshot, field) for field in MODULE_SNAPSHOT_FIELD.values()}
+        if snapshot
+        else None
     )
 
     return resolve_required_modules(allowed_modules, user_history)
 
 
-async def create_pending_module_requests(db: AsyncSession, upload_id: uuid.UUID, resolved_modules: list[str]) -> None:
+async def create_pending_module_requests(
+    db: AsyncSession, upload_id: uuid.UUID, resolved_modules: list[str]
+) -> None:
     for module in resolved_modules:
         db.add(UploadModuleRequest(upload_id=upload_id, module=module, status=UploadStatus.pending))
     await db.flush()

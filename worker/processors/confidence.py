@@ -1,4 +1,6 @@
-def split_by_confidence(transactions: list[dict], threshold: float) -> tuple[list[dict], list[dict]]:
+def split_by_confidence(
+    transactions: list[dict], threshold: float
+) -> tuple[list[dict], list[dict]]:
     auto, review = [], []
     for txn in transactions:
         confidence = float(txn.get("confidence", 0))

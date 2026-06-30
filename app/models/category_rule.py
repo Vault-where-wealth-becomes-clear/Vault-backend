@@ -11,7 +11,9 @@ from app.models.enums import RuleSource
 
 class CategoryRule(Base):
     __tablename__ = "category_rules"
-    __table_args__ = (UniqueConstraint("user_id", "keyword", name="uq_category_rules_user_keyword"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "keyword", name="uq_category_rules_user_keyword"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()")

@@ -71,7 +71,9 @@ def generate_insights(
     if current_month.savings > 0:
         insights.append(f"Ahorraste ${current_month.savings:,.0f} ARS este mes")
 
-    portfolio_change = current_month.total_usd - (previous_month.total_usd if previous_month else Decimal("0"))
+    portfolio_change = current_month.total_usd - (
+        previous_month.total_usd if previous_month else Decimal("0")
+    )
     if portfolio_change != 0:
         direction = "subio" if portfolio_change > 0 else "bajo"
         insights.append(f"Tu patrimonio {direction} USD {abs(portfolio_change):,.0f} este mes")
@@ -117,7 +119,9 @@ def _compare_categories(categorizacion: dict, previous_categorizacion: dict) -> 
             if diff_pct > 20:
                 insights.append(f"Gastaste {diff_pct:.0f}% mas en {category} que el mes pasado")
             elif diff_pct < -20:
-                insights.append(f"Gastaste {abs(diff_pct):.0f}% menos en {category} que el mes pasado")
+                insights.append(
+                    f"Gastaste {abs(diff_pct):.0f}% menos en {category} que el mes pasado"
+                )
     return insights
 
 
@@ -128,7 +132,9 @@ def _cartera_insights(cartera: dict) -> list[str]:
     if total_pl > 0:
         insights.append(f"Tu cartera tuvo un resultado positivo de ${total_pl:,.0f} en el período")
     elif total_pl < 0:
-        insights.append(f"Tu cartera tuvo un resultado negativo de ${abs(total_pl):,.0f} en el período")
+        insights.append(
+            f"Tu cartera tuvo un resultado negativo de ${abs(total_pl):,.0f} en el período"
+        )
     return insights
 
 
@@ -136,7 +142,9 @@ def _proyeccion_insights(proyeccion: dict) -> list[str]:
     insights = []
     banda_media = proyeccion.get("banda_media")
     if banda_media is not None:
-        insights.append(f"Proyectamos un patrimonio liquido de ${banda_media:,.0f} dentro de 3 meses")
+        insights.append(
+            f"Proyectamos un patrimonio liquido de ${banda_media:,.0f} dentro de 3 meses"
+        )
     return insights
 
 

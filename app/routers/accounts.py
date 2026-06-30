@@ -79,7 +79,9 @@ async def delete_account(
     await db.flush()
 
 
-async def _get_owned_account(db: AsyncSession, account_id: uuid.UUID, user_id: uuid.UUID) -> Account:
+async def _get_owned_account(
+    db: AsyncSession, account_id: uuid.UUID, user_id: uuid.UUID
+) -> Account:
     account = await db.scalar(
         select(Account).where(Account.id == account_id, Account.user_id == user_id)
     )

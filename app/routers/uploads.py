@@ -83,7 +83,9 @@ async def register_upload(
     await create_pending_module_requests(db, upload.id, resolved_modules)
     await db.flush()
 
-    sqs.send_message(build_sqs_message(upload, current_user.id, account.account_type.value, resolved_modules))
+    sqs.send_message(
+        build_sqs_message(upload, current_user.id, account.account_type.value, resolved_modules)
+    )
     return upload
 
 
@@ -108,8 +110,6 @@ async def list_uploads(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.scalars(
-        select(Upload)
-        .where(Upload.user_id == current_user.id)
-        .order_by(Upload.uploaded_at.desc())
+        select(Upload).where(Upload.user_id == current_user.id).order_by(Upload.uploaded_at.desc())
     )
     return result.all()

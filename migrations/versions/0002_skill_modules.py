@@ -5,6 +5,7 @@ Revises: 0001
 Create Date: 2026-06-22
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -50,20 +51,45 @@ def upgrade() -> None:
 
     op.create_table(
         "upload_module_requests",
-        sa.Column("id", postgresql.UUID(as_uuid=True), server_default=sa.text("uuid_generate_v4()"), primary_key=True),
-        sa.Column("upload_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("uploads.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            server_default=sa.text("uuid_generate_v4()"),
+            primary_key=True,
+        ),
+        sa.Column(
+            "upload_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("uploads.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("module", skill_module, nullable=False),
         sa.Column("status", upload_status, nullable=False, server_default="pending"),
         sa.Column("result_json", postgresql.JSONB),
         sa.Column("error_message", sa.Text),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
         sa.UniqueConstraint("upload_id", "module", name="uq_upload_module_requests_upload_module"),
     )
 
     op.create_table(
         "financial_snapshots",
-        sa.Column("id", postgresql.UUID(as_uuid=True), server_default=sa.text("uuid_generate_v4()"), primary_key=True),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            server_default=sa.text("uuid_generate_v4()"),
+            primary_key=True,
+        ),
+        sa.Column(
+            "user_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("period_month", sa.Date, nullable=False),
         sa.Column("flujo_mensual", postgresql.JSONB),
         sa.Column("categorizacion", postgresql.JSONB),
@@ -72,7 +98,12 @@ def upgrade() -> None:
         sa.Column("tablero_general", postgresql.JSONB),
         sa.Column("proyeccion", postgresql.JSONB),
         sa.Column("compromisos", postgresql.JSONB),
-        sa.Column("updated_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")),
+        sa.Column(
+            "updated_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
         sa.UniqueConstraint("user_id", "period_month", name="uq_financial_snapshots_user_period"),
     )
 

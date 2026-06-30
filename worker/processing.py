@@ -61,7 +61,12 @@ async def process_upload(message: dict) -> None:
 
             system_prompt = build_skill_system_prompt(resolved_modules)
             user_message = _build_user_message(
-                text, account_type, category_rules, period_month.strftime("%Y-%m"), resolved_modules, user_history
+                text,
+                account_type,
+                category_rules,
+                period_month.strftime("%Y-%m"),
+                resolved_modules,
+                user_history,
             )
 
             raw_response = call_llm_with_skill(user_message, system_prompt)
@@ -70,7 +75,9 @@ async def process_upload(message: dict) -> None:
             transactions = result["transacciones"]
             transactions = apply_mep_conversion(transactions, effective_rate)
             installments = extract_installments(transactions)
-            auto_txns, review_txns = split_by_confidence(transactions, settings.confidence_threshold)
+            auto_txns, review_txns = split_by_confidence(
+                transactions, settings.confidence_threshold
+            )
             await _save_transactions(db, upload, auto_txns + review_txns)
             await _save_installments(db, upload, installments)
 
@@ -111,7 +118,8 @@ def _build_user_message(
         relevant = {
             module: user_history[MODULE_SNAPSHOT_FIELD[module]]
             for module in resolved_modules
-            if MODULE_SNAPSHOT_FIELD.get(module) and user_history.get(MODULE_SNAPSHOT_FIELD[module]) is not None
+            if MODULE_SNAPSHOT_FIELD.get(module)
+            and user_history.get(MODULE_SNAPSHOT_FIELD[module]) is not None
         }
         if relevant:
             history_str = str(relevant)
@@ -148,7 +156,9 @@ async def _get_financial_snapshot(db, user_id: uuid.UUID, period_month: date) ->
     return {field: getattr(snapshot, field) for field in MODULE_SNAPSHOT_FIELD.values()}
 
 
-async def _upsert_financial_snapshot(db, user_id: uuid.UUID, period_month: date, result: dict) -> None:
+async def _upsert_financial_snapshot(
+    db, user_id: uuid.UUID, period_month: date, result: dict
+) -> None:
     snapshot = await db.scalar(
         select(FinancialSnapshot).where(
             FinancialSnapshot.user_id == user_id, FinancialSnapshot.period_month == period_month

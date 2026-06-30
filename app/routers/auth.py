@@ -66,7 +66,9 @@ async def login(
     try:
         result = cognito.initiate_auth(body.email, body.password)
     except cognito.client.exceptions.UserNotConfirmedException as exc:
-        raise HTTPException(status_code=403, detail="Confirma tu cuenta antes de iniciar sesion") from exc
+        raise HTTPException(
+            status_code=403, detail="Confirma tu cuenta antes de iniciar sesion"
+        ) from exc
     except cognito.client.exceptions.NotAuthorizedException as exc:
         raise HTTPException(status_code=401, detail="Credenciales invalidas") from exc
 

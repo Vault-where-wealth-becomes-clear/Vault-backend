@@ -10,7 +10,9 @@ from app.database import Base
 
 class FinancialSnapshot(Base):
     __tablename__ = "financial_snapshots"
-    __table_args__ = (UniqueConstraint("user_id", "period_month", name="uq_financial_snapshots_user_period"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "period_month", name="uq_financial_snapshots_user_period"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()")

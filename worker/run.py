@@ -47,7 +47,9 @@ def poll_loop() -> None:
             print(f"[worker] procesando upload {upload_id}")
             try:
                 asyncio.run(process_upload(body))
-                sqs.delete_message(QueueUrl=settings.sqs_queue_url, ReceiptHandle=message["ReceiptHandle"])
+                sqs.delete_message(
+                    QueueUrl=settings.sqs_queue_url, ReceiptHandle=message["ReceiptHandle"]
+                )
                 print(f"[worker] upload {upload_id} terminado")
             except Exception:
                 traceback.print_exc()

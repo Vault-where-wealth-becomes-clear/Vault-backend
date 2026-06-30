@@ -5,6 +5,7 @@ Revises:
 Create Date: 2026-06-10
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -52,43 +53,95 @@ def upgrade() -> None:
 
     op.create_table(
         "users",
-        sa.Column("id", postgresql.UUID(as_uuid=True), server_default=sa.text("uuid_generate_v4()"), primary_key=True),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            server_default=sa.text("uuid_generate_v4()"),
+            primary_key=True,
+        ),
         sa.Column("email", sa.String(255), nullable=False, unique=True),
         sa.Column("name", sa.String(255)),
         sa.Column("cognito_sub", sa.String(255), nullable=False, unique=True),
         sa.Column("plan", plan_type, nullable=False, server_default="free"),
         sa.Column("base_currency", currency_type, nullable=False, server_default="USD"),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")),
-        sa.Column("updated_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
     )
 
     op.create_table(
         "accounts",
-        sa.Column("id", postgresql.UUID(as_uuid=True), server_default=sa.text("uuid_generate_v4()"), primary_key=True),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            server_default=sa.text("uuid_generate_v4()"),
+            primary_key=True,
+        ),
+        sa.Column(
+            "user_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("account_type", account_type, nullable=False),
         sa.Column("institution", sa.String(255)),
         sa.Column("currency", currency_type, nullable=False, server_default="ARS"),
         sa.Column("current_balance", sa.Numeric(14, 2), server_default="0"),
         sa.Column("is_active", sa.Boolean, nullable=False, server_default=sa.text("TRUE")),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
     )
 
     op.create_table(
         "exchange_rates",
-        sa.Column("id", postgresql.UUID(as_uuid=True), server_default=sa.text("uuid_generate_v4()"), primary_key=True),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            server_default=sa.text("uuid_generate_v4()"),
+            primary_key=True,
+        ),
         sa.Column("period_month", sa.Date, nullable=False, unique=True),
         sa.Column("mep_rate", sa.Numeric(10, 2), nullable=False),
         sa.Column("source", mep_source, nullable=False, server_default="manual"),
-        sa.Column("set_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")),
+        sa.Column(
+            "set_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")
+        ),
     )
 
     op.create_table(
         "uploads",
-        sa.Column("id", postgresql.UUID(as_uuid=True), server_default=sa.text("uuid_generate_v4()"), primary_key=True),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("account_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("accounts.id"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            server_default=sa.text("uuid_generate_v4()"),
+            primary_key=True,
+        ),
+        sa.Column(
+            "user_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "account_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("accounts.id"),
+            nullable=False,
+        ),
         sa.Column("s3_key_pdf", sa.String(500), nullable=False),
         sa.Column("s3_key_json", sa.String(500)),
         sa.Column("period_month", sa.Date, nullable=False),
@@ -96,16 +149,38 @@ def upgrade() -> None:
         sa.Column("detected_bank", sa.String(255)),
         sa.Column("pending_mep", sa.Boolean, nullable=False, server_default=sa.text("FALSE")),
         sa.Column("error_message", sa.Text),
-        sa.Column("uploaded_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")),
+        sa.Column(
+            "uploaded_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
         sa.Column("processed_at", sa.TIMESTAMP(timezone=True)),
     )
 
     op.create_table(
         "transactions",
-        sa.Column("id", postgresql.UUID(as_uuid=True), server_default=sa.text("uuid_generate_v4()"), primary_key=True),
-        sa.Column("upload_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("uploads.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
-        sa.Column("account_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("accounts.id"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            server_default=sa.text("uuid_generate_v4()"),
+            primary_key=True,
+        ),
+        sa.Column(
+            "upload_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("uploads.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False
+        ),
+        sa.Column(
+            "account_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("accounts.id"),
+            nullable=False,
+        ),
         sa.Column("date", sa.Date, nullable=False),
         sa.Column("description", sa.String(500), nullable=False),
         sa.Column("amount_ars", sa.Numeric(14, 2), nullable=False),
@@ -115,39 +190,86 @@ def upgrade() -> None:
         sa.Column("confidence", sa.Numeric(4, 3)),
         sa.Column("needs_review", sa.Boolean, nullable=False, server_default=sa.text("FALSE")),
         sa.Column("is_corrected", sa.Boolean, nullable=False, server_default=sa.text("FALSE")),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
     )
 
     op.create_table(
         "installments",
-        sa.Column("id", postgresql.UUID(as_uuid=True), server_default=sa.text("uuid_generate_v4()"), primary_key=True),
-        sa.Column("transaction_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("transactions.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            server_default=sa.text("uuid_generate_v4()"),
+            primary_key=True,
+        ),
+        sa.Column(
+            "transaction_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("transactions.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False
+        ),
         sa.Column("description", sa.String(500), nullable=False),
         sa.Column("current_installment", sa.Integer, nullable=False),
         sa.Column("total_installments", sa.Integer, nullable=False),
         sa.Column("amount_per_installment", sa.Numeric(14, 2), nullable=False),
         sa.Column("currency", currency_type, nullable=False, server_default="ARS"),
         sa.Column("next_due_date", sa.Date),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
     )
 
     op.create_table(
         "category_rules",
-        sa.Column("id", postgresql.UUID(as_uuid=True), server_default=sa.text("uuid_generate_v4()"), primary_key=True),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            server_default=sa.text("uuid_generate_v4()"),
+            primary_key=True,
+        ),
+        sa.Column(
+            "user_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("keyword", sa.String(255), nullable=False),
         sa.Column("category", sa.String(100), nullable=False),
         sa.Column("source", rule_source, nullable=False, server_default="user"),
         sa.Column("times_applied", sa.Integer, nullable=False, server_default="0"),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
         sa.UniqueConstraint("user_id", "keyword", name="uq_category_rules_user_keyword"),
     )
 
     op.create_table(
         "category_limits",
-        sa.Column("id", postgresql.UUID(as_uuid=True), server_default=sa.text("uuid_generate_v4()"), primary_key=True),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            server_default=sa.text("uuid_generate_v4()"),
+            primary_key=True,
+        ),
+        sa.Column(
+            "user_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("category", sa.String(100), nullable=False),
         sa.Column("limit_amount", sa.Numeric(14, 2), nullable=False),
         sa.Column("currency", currency_type, nullable=False, server_default="ARS"),
