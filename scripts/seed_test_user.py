@@ -131,11 +131,7 @@ def create_cognito_user(cognito) -> str:
         ],
         MessageAction="SUPPRESS",  # don't send welcome email
     )
-    sub = next(
-        attr["Value"]
-        for attr in resp["User"]["Attributes"]
-        if attr["Name"] == "sub"
-    )
+    sub = next(attr["Value"] for attr in resp["User"]["Attributes"] if attr["Name"] == "sub")
     cognito.admin_set_user_password(
         UserPoolId=settings.cognito_user_pool_id,
         Username=TEST_EMAIL,
