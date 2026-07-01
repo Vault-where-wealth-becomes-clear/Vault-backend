@@ -32,7 +32,15 @@ Si hay cuotas:
 """
 
 ACCOUNT_TYPE_CONTEXT = {
-    "credit_card_ars": "Extracto de tarjeta de crédito en pesos argentinos. Extraé cada consumo, cuota e interés.",
+    "credit_card_ars": (
+        "Extracto de tarjeta de crédito en pesos argentinos. "
+        "Extraé cada consumo, cuota e interés. "
+        "Reglas de importe: (1) una fila del PDF = una sola entrada en transacciones, nunca duplicar la misma fila como ARS y como USD. "
+        "(2) Consumos en ARS: usar columna Pesos, currency='ARS'. "
+        "(3) Consumos en USD: usar columna Dólares, currency='USD'. "
+        "(4) Consumos en otras monedas (CLP, EUR, BRL, GBP, etc.): el banco ya calculó el equivalente en USD en la columna Dólares — usar ese valor, currency='USD'. No usar el monto en la moneda original ni calcular conversión propia. "
+        "(5) Impuestos y percepciones (IIBB, IVA RG, DB.RG, etc.): registrar una sola vez en la moneda del importe principal de esa fila."
+    ),
     "credit_card_usd": "Extracto de tarjeta de crédito en dólares. Extraé cada consumo en USD.",
     "checking_ars": "Extracto de cuenta corriente en pesos. Extraé movimientos: débitos, créditos, transferencias.",
     "checking_usd": "Extracto de cuenta en dólares. Extraé movimientos en USD.",
