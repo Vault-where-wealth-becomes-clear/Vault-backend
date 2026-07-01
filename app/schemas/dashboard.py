@@ -4,11 +4,20 @@ from typing import Any
 from pydantic import BaseModel
 
 
+class FlujoDelMes(BaseModel):
+    ingresos_ars: float
+    egresos_ars: float
+    resultado_ars: float
+    ingresos_usd: float
+    egresos_usd: float
+
+
 class DashboardResponse(BaseModel):
     total_usd: float
     variation_pct: float
     period: str
     insights: list[str]
+    flujo_del_mes: FlujoDelMes | None = None
 
 
 class CategoryBreakdownItem(BaseModel):

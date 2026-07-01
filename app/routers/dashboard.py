@@ -20,6 +20,7 @@ from app.schemas.dashboard import (
 from app.services.dashboard_service import (
     generate_insights,
     generate_snapshot_insights,
+    get_flujo_del_mes,
     get_month_summary,
     get_patrimonio_actual,
 )
@@ -67,11 +68,14 @@ async def get_dashboard(
     if previous.total_usd:
         variation_pct = ((current.total_usd - previous.total_usd) / previous.total_usd) * 100
 
+    flujo = await get_flujo_del_mes(db, current_user.id, period_month)
+
     return DashboardResponse(
         total_usd=current.total_usd,
         variation_pct=variation_pct,
         period=period_month.strftime("%Y-%m"),
         insights=generate_insights(current, previous),
+        flujo_del_mes=flujo,
     )
 
 
@@ -100,21 +104,45 @@ async def get_breakdown(
 
 @router.get("/evolution", response_model=DashboardEvolutionResponse)
 async def get_evolution(
+    period: str | None = Query(default=None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    today = date.today()
-    points = []
-    period_month = date(today.year, today.month, 1)
+    anchor = await _resolve_period(period, db, current_user.id)
 
-    for _ in range(12):
-        summary = await get_month_summary(db, current_user.id, period_month)
-        points.append(
-            EvolutionPoint(month=period_month.strftime("%Y-%m"), total_usd=summary.total_usd)
-        )
-        period_month = _previous_month(period_month)
+    # Build last-6-month window ending at anchor
+    months: list[date] = []
+    m = anchor
+    for _ in range(6):
+        months.append(m)
+        m = _previous_month(m)
+    months.reverse()  # oldest → newest
 
-    points.reverse()
+    points: list[EvolutionPoint] = []
+    for month in months:
+        if month == anchor:
+            # Current period: use live current_balance source
+            val = await get_patrimonio_actual(db, current_user.id, month)
+            if val > 0:
+                points.append(EvolutionPoint(month=month.strftime("%Y-%m"), total_usd=float(val)))
+        else:
+            # Past period: use most recent snapshot for that calendar month
+            snap = await db.scalar(
+                select(FinancialSnapshot)
+                .where(
+                    FinancialSnapshot.user_id == current_user.id,
+                    extract("year", FinancialSnapshot.period_month) == month.year,
+                    extract("month", FinancialSnapshot.period_month) == month.month,
+                    FinancialSnapshot.tablero_general.isnot(None),
+                )
+                .order_by(FinancialSnapshot.period_month.desc())
+                .limit(1)
+            )
+            if snap and snap.tablero_general:
+                pat = snap.tablero_general.get("patrimonio_total_usd")
+                if pat is not None and float(pat) > 0:
+                    points.append(EvolutionPoint(month=month.strftime("%Y-%m"), total_usd=float(pat)))
+
     return DashboardEvolutionResponse(points=points)
 
 

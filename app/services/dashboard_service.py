@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import extract, func, select
+from sqlalchemy import case, extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -112,6 +112,50 @@ async def get_month_summary(db: AsyncSession, user_id, period_month: date) -> Mo
         total_usd += balance or Decimal("0")
 
     return MonthSummary(total_usd=total_usd, savings=savings, by_category=by_category)
+
+
+async def get_flujo_del_mes(
+    db: AsyncSession, user_id, period_month: date
+) -> dict[str, Decimal]:
+    """Sum ingresos/egresos from non-CC account transactions for the period."""
+    row = (
+        await db.execute(
+            select(
+                func.coalesce(
+                    func.sum(case((Transaction.amount_ars > 0, Transaction.amount_ars))),
+                    Decimal("0"),
+                ).label("ingresos_ars"),
+                func.coalesce(
+                    func.sum(case((Transaction.amount_ars < 0, Transaction.amount_ars))),
+                    Decimal("0"),
+                ).label("egresos_ars"),
+                func.coalesce(
+                    func.sum(case((Transaction.amount_usd > 0, Transaction.amount_usd))),
+                    Decimal("0"),
+                ).label("ingresos_usd"),
+                func.coalesce(
+                    func.sum(case((Transaction.amount_usd < 0, Transaction.amount_usd))),
+                    Decimal("0"),
+                ).label("egresos_usd"),
+            )
+            .join(Account, Transaction.account_id == Account.id)
+            .where(
+                Transaction.user_id == user_id,
+                extract("year", Transaction.date) == period_month.year,
+                extract("month", Transaction.date) == period_month.month,
+                Account.account_type.not_in(_CREDIT_CARD_TYPES),
+            )
+        )
+    ).one()
+    ing = row.ingresos_ars or Decimal("0")
+    egr = row.egresos_ars or Decimal("0")
+    return {
+        "ingresos_ars": float(ing),
+        "egresos_ars": float(egr),
+        "resultado_ars": float(ing + egr),
+        "ingresos_usd": float(row.ingresos_usd or Decimal("0")),
+        "egresos_usd": float(row.egresos_usd or Decimal("0")),
+    }
 
 
 def generate_insights(
