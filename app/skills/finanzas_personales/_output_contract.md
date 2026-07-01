@@ -72,3 +72,7 @@ es el detalle transaccional plano que alimenta el registro histórico de movimie
    - **Impuestos y percepciones** (IIBB, IVA RG, DB.RG, Percepción AFIP, etc.): registrar en la moneda en que figura el importe en la fila. Si hay valor solo en la columna Pesos → `"currency": "ARS"`. Si hay valor solo en la columna Dólares → `"currency": "USD"`. Si hay valor en ambas columnas para el mismo ítem, registrar solo una vez en la moneda del importe principal (típicamente ARS para extractos locales).
 
 3. El campo `amount` es **siempre negativo para gastos** y positivo para créditos/devoluciones, en la moneda elegida según la regla anterior.
+
+4. **Prefijo DB. vs CR. en cargos fiscales:**
+   - Descripción empieza con `DB.` (ej. `DB.RG`, `DB.IVA`) → débito fiscal, `amount` **negativo**, categoría **Impuestos**.
+   - Descripción empieza con `CR.` (ej. `CR.RG`, `CR.IVA`) → crédito fiscal (devolución del banco), `amount` **positivo**, categoría **Impuestos**.

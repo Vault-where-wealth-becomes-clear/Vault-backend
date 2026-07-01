@@ -74,6 +74,7 @@ async def process_upload(message: dict) -> None:
             result = parse_skill_response(raw_response)
 
             transactions = result["transacciones"]
+            transactions = _apply_fiscal_rules(transactions)
             transactions = apply_mep_conversion(transactions, effective_rate)
             installments = extract_installments(transactions)
             auto_txns, review_txns = split_by_confidence(
@@ -246,6 +247,26 @@ _CC_PAYMENT_PATTERNS = (
 def _is_cc_payment(description: str) -> bool:
     upper = description.upper()
     return upper.startswith("SU PAGO") or any(p in upper for p in _CC_PAYMENT_PATTERNS)
+
+
+def _apply_fiscal_rules(transactions: list[dict]) -> list[dict]:
+    """
+    Hard-correct fiscal DB./CR. lines regardless of LLM output:
+    - DB.* → category=Impuestos, amount negative
+    - CR.* → category=Impuestos, amount positive (bank credit, not an expense)
+    """
+    for txn in transactions:
+        desc_upper = txn.get("description", "").upper().strip()
+        if desc_upper.startswith("DB."):
+            txn["category"] = "Impuestos"
+            if txn.get("amount", 0) > 0:
+                txn["amount"] = -txn["amount"]
+        elif desc_upper.startswith("CR."):
+            txn["category"] = "Impuestos"
+            if txn.get("amount", 0) < 0:
+                txn["amount"] = -txn["amount"]
+                print(f"[worker] CR.* crédito fiscal — signo corregido a positivo: {txn['description']!r}")
+    return transactions
 
 
 def _dedup_transactions(transactions: list[dict], account_type: str) -> list[dict]:

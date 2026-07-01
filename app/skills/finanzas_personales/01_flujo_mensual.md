@@ -202,7 +202,11 @@ Los consumos de tarjeta pertenecen al **mes de la compra**, no al mes del pago.
 - Cargos financieros (intereses, financiación, CFT) → categoría: **Servicios**.
 
 **INCLUIR — categoría obligatoria "Impuestos":**
-- Ingresos Brutos (IIBB / Ing. Brutos), IVA RG, DB.RG (Débito Reglamentario General), Impuesto PAIS, Impuesto para una Argentina Inclusiva y Solidaria (PAIS), Percepción AFIP, Percepción IIBB y cualquier otro cargo emitido por organismos estatales o recaudatorios. Estos nunca van a VARIOS.
+- Ingresos Brutos (IIBB / Ing. Brutos), IVA RG, DB.RG (Débito Reglamentario General), CR.RG (Crédito Reglamentario General), Impuesto PAIS, Impuesto para una Argentina Inclusiva y Solidaria (PAIS), Percepción AFIP, Percepción IIBB y cualquier otro cargo o crédito emitido por organismos estatales o recaudatorios. Estos nunca van a VARIOS ni a Servicios.
+
+**Regla crítica de signo para líneas de crédito fiscal (CR.*):**
+- Líneas que comienzan con "CR." (ej. "CR.RG", "CR.IVA") son *créditos* del banco al cliente — el banco devuelve o acredita ese monto. El `amount` debe ser **POSITIVO** (dinero que ingresa). Ejemplo: `CR.RG 5617 30% M` → `"amount": 9244.40, "currency": "ARS"`.
+- Líneas que comienzan con "DB." (ej. "DB.RG") son *débitos* fiscales — el banco cobra ese monto. El `amount` debe ser **NEGATIVO**. Ejemplo: `DB.RG 5617 30%` → `"amount": -395045.45, "currency": "ARS"`.
 
 ---
 
