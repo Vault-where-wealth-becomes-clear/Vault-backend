@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
 from app.models.enums import AccountType, CurrencyType
+from app.models.exchange_rate import ExchangeRate
 from app.models.financial_snapshot import FinancialSnapshot
 from app.models.transaction import Transaction
 
@@ -19,6 +20,40 @@ class MonthSummary:
 
 
 _CREDIT_CARD_TYPES = [AccountType.credit_card_ars, AccountType.credit_card_usd]
+
+
+async def get_patrimonio_actual(db: AsyncSession, user_id, period_month: date) -> Decimal:
+    """
+    Suma current_balance de todas las cuentas activas del usuario,
+    excluyendo tarjetas de crédito. Convierte saldos ARS a USD con el MEP del período.
+    """
+    mep = await db.scalar(
+        select(ExchangeRate.mep_rate).where(ExchangeRate.period_month == period_month)
+    )
+    if mep is None:
+        # Fallback: MEP más reciente anterior al período
+        mep = await db.scalar(
+            select(ExchangeRate.mep_rate)
+            .where(ExchangeRate.period_month <= period_month)
+            .order_by(ExchangeRate.period_month.desc())
+            .limit(1)
+        )
+    mep = Decimal(str(mep)) if mep else Decimal("1")
+
+    rows = await db.execute(
+        select(Account.current_balance, Account.currency)
+        .where(
+            Account.user_id == user_id,
+            Account.is_active.is_(True),
+            Account.account_type.not_in(_CREDIT_CARD_TYPES),
+            Account.current_balance.isnot(None),
+        )
+    )
+    total = Decimal("0")
+    for balance, currency in rows:
+        b = balance or Decimal("0")
+        total += (b / mep).quantize(Decimal("0.0001")) if currency == CurrencyType.ARS else b
+    return total
 
 
 async def get_month_summary(db: AsyncSession, user_id, period_month: date) -> MonthSummary:

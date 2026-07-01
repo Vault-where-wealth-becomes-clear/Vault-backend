@@ -228,6 +228,9 @@ async def _upsert_financial_snapshot(
     await db.flush()
 
 
+_CREDIT_CARD_ACCOUNT_TYPES = {"credit_card_ars", "credit_card_usd"}
+
+
 async def _update_account_balances(db, upload: Upload, result: dict) -> None:
     flujo = result.get("flujo_mensual")
     if not flujo:
@@ -238,6 +241,10 @@ async def _update_account_balances(db, upload: Upload, result: dict) -> None:
 
     account = await db.get(Account, upload.account_id)
     if not account:
+        return
+
+    if account.account_type.value in _CREDIT_CARD_ACCOUNT_TYPES:
+        print(f"[worker] cuenta '{account.name}' es tarjeta de crédito — current_balance no actualizado")
         return
 
     entries = [(name, data) for name, data in libro.items() if isinstance(data, dict)]

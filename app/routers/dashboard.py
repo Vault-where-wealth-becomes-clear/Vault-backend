@@ -21,6 +21,7 @@ from app.services.dashboard_service import (
     generate_insights,
     generate_snapshot_insights,
     get_month_summary,
+    get_patrimonio_actual,
 )
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -56,16 +57,11 @@ async def get_dashboard(
     current = await get_month_summary(db, current_user.id, period_month)
     previous = await get_month_summary(db, current_user.id, _previous_month(period_month))
 
-    snapshot = await db.scalar(
-        select(FinancialSnapshot).where(
-            FinancialSnapshot.user_id == current_user.id,
-            FinancialSnapshot.period_month == period_month,
-        )
+    # Patrimony from current_balance of non-credit-card accounts (source of truth)
+    current.total_usd = await get_patrimonio_actual(db, current_user.id, period_month)
+    previous.total_usd = await get_patrimonio_actual(
+        db, current_user.id, _previous_month(period_month)
     )
-    if snapshot and snapshot.tablero_general:
-        tg_usd = snapshot.tablero_general.get("patrimonio_total_usd")
-        if tg_usd is not None:
-            current.total_usd = Decimal(str(tg_usd))
 
     variation_pct = Decimal("0")
     if previous.total_usd:
