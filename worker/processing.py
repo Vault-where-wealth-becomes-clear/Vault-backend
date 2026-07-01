@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.aws.s3 import S3Client
 from app.config import settings
 from app.database import AsyncSessionLocal
+from app.models.account import Account
 from app.models.category_rule import CategoryRule
 from app.models.enums import SkillModule, UploadStatus
 from app.models.exchange_rate import ExchangeRate
@@ -78,10 +79,11 @@ async def process_upload(message: dict) -> None:
             auto_txns, review_txns = split_by_confidence(
                 transactions, settings.confidence_threshold
             )
-            await _save_transactions(db, upload, auto_txns + review_txns)
+            await _save_transactions(db, upload, auto_txns + review_txns, account_type)
             await _save_installments(db, upload, installments)
 
             await _upsert_financial_snapshot(db, user_id, period_month, result)
+            await _update_account_balances(db, upload, result)
             await _save_module_request_results(db, upload.id, resolved_modules, result)
 
             try:
@@ -185,6 +187,30 @@ async def _upsert_financial_snapshot(
     await db.flush()
 
 
+async def _update_account_balances(db, upload: Upload, result: dict) -> None:
+    flujo = result.get("flujo_mensual")
+    if not flujo:
+        return
+    libro = flujo.get("libro_diario", {})
+    if not libro or not isinstance(libro, dict):
+        return
+
+    account = await db.get(Account, upload.account_id)
+    if not account:
+        return
+
+    entries = [(name, data) for name, data in libro.items() if isinstance(data, dict)]
+    if not entries:
+        return
+
+    chosen = next((d for _, d in entries if d.get("reconciliacion_ok")), entries[0][1])
+    saldo_final = chosen.get("saldo_final")
+    if saldo_final is not None:
+        account.current_balance = Decimal(str(saldo_final))
+        await db.flush()
+        print(f"[worker] cuenta '{account.name}': saldo_final → {saldo_final}")
+
+
 async def _save_module_request_results(
     db, upload_id: uuid.UUID, resolved_modules: list[str], result: dict
 ) -> None:
@@ -205,8 +231,29 @@ async def _save_module_request_results(
     await db.flush()
 
 
-async def _save_transactions(db, upload: Upload, transactions: list[dict]) -> None:
+_CREDIT_CARD_TYPES = {"credit_card_ars", "credit_card_usd"}
+
+_CC_PAYMENT_PATTERNS = (
+    "SU PAGO EN PESOS",
+    "SU PAGO EN DOLARES",
+    "SU PAGO EN USD",
+    "SU PAGO ANTERIOR",
+    "PAGO MINIMO ANTERIOR",
+    "PAGO MINIMO",
+)
+
+
+def _is_cc_payment(description: str) -> bool:
+    upper = description.upper()
+    return upper.startswith("SU PAGO") or any(p in upper for p in _CC_PAYMENT_PATTERNS)
+
+
+async def _save_transactions(db, upload: Upload, transactions: list[dict], account_type: str = "") -> None:
+    is_credit_card = account_type in _CREDIT_CARD_TYPES
     for txn in transactions:
+        if is_credit_card and _is_cc_payment(txn.get("description", "")):
+            print(f"[worker] excluido pago de tarjeta: {txn['description']!r}")
+            continue
         row = Transaction(
             upload_id=upload.id,
             user_id=upload.user_id,

@@ -18,12 +18,15 @@ class MonthSummary:
     by_category: dict[str, Decimal] = field(default_factory=dict)
 
 
+_CREDIT_CARD_TYPES = [AccountType.credit_card_ars, AccountType.credit_card_usd]
+
+
 async def get_month_summary(db: AsyncSession, user_id, period_month: date) -> MonthSummary:
+    # Spending by category — all accounts (incl. credit cards, they represent real expenses)
     rows = await db.execute(
         select(
             Transaction.category,
             func.sum(Transaction.amount_ars).label("total_ars"),
-            func.sum(Transaction.amount_usd).label("total_usd"),
         )
         .where(
             Transaction.user_id == user_id,
@@ -34,14 +37,12 @@ async def get_month_summary(db: AsyncSession, user_id, period_month: date) -> Mo
     )
 
     by_category: dict[str, Decimal] = {}
-    total_usd = Decimal("0")
     income_ars = Decimal("0")
     expense_ars = Decimal("0")
 
-    for category, total_ars, total_usd_cat in rows:
+    for category, total_ars in rows:
         total_ars = total_ars or Decimal("0")
         by_category[category or "Sin categoria"] = abs(total_ars)
-        total_usd += total_usd_cat or Decimal("0")
         if total_ars > 0:
             income_ars += total_ars
         else:
@@ -49,7 +50,20 @@ async def get_month_summary(db: AsyncSession, user_id, period_month: date) -> Mo
 
     savings = income_ars + expense_ars  # expense_ars ya es negativo
 
-    # Incluir saldo de cuentas que no generan transacciones (efectivo y cripto en USD)
+    # Patrimony in USD — exclude credit cards (they are liabilities, not assets)
+    usd_row = await db.execute(
+        select(func.sum(Transaction.amount_usd))
+        .join(Account, Transaction.account_id == Account.id)
+        .where(
+            Transaction.user_id == user_id,
+            extract("year", Transaction.date) == period_month.year,
+            extract("month", Transaction.date) == period_month.month,
+            Account.account_type.not_in(_CREDIT_CARD_TYPES),
+        )
+    )
+    total_usd = usd_row.scalar() or Decimal("0")
+
+    # Add balances of accounts that don't generate transactions (cash and crypto in USD)
     cash_rows = await db.execute(
         select(Account.current_balance, Account.currency).where(
             Account.user_id == user_id,
@@ -163,5 +177,9 @@ def _proyeccion_insights(proyeccion: dict) -> list[str]:
     return insights
 
 
-def _translate_alert(alert: str) -> str:
-    return alert
+def _translate_alert(alert) -> str:
+    if isinstance(alert, dict):
+        tipo = alert.get("tipo", "")
+        mensaje = alert.get("mensaje") or alert.get("message") or alert.get("texto") or ""
+        return f"{tipo} {mensaje}".strip() if tipo else mensaje
+    return str(alert)
