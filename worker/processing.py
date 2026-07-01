@@ -248,12 +248,49 @@ def _is_cc_payment(description: str) -> bool:
     return upper.startswith("SU PAGO") or any(p in upper for p in _CC_PAYMENT_PATTERNS)
 
 
+def _dedup_transactions(transactions: list[dict], account_type: str) -> list[dict]:
+    """Keep one entry per (description, date). For credit cards prefer native currency."""
+    prefer_ars = account_type == "credit_card_ars"
+    groups: dict[tuple, list[dict]] = {}
+    order: list[tuple] = []
+    for txn in transactions:
+        key = (txn.get("description", "").strip(), txn.get("date", ""))
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(txn)
+
+    result = []
+    for key in order:
+        group = groups[key]
+        if len(group) == 1:
+            result.append(group[0])
+        else:
+            if prefer_ars:
+                ars = [t for t in group if t.get("currency") == "ARS"]
+                chosen = ars[0] if ars else group[0]
+            else:
+                usd = [t for t in group if t.get("currency") == "USD"]
+                chosen = usd[0] if usd else group[0]
+            print(f"[worker] dedup: {len(group) - 1} duplicado(s) descartado(s) — '{key[0]}' {key[1]}")
+            result.append(chosen)
+    return result
+
+
 async def _save_transactions(db, upload: Upload, transactions: list[dict], account_type: str = "") -> None:
     is_credit_card = account_type in _CREDIT_CARD_TYPES
+
+    # Strip CC payment lines
+    if is_credit_card:
+        before = len(transactions)
+        transactions = [t for t in transactions if not _is_cc_payment(t.get("description", ""))]
+        if len(transactions) < before:
+            print(f"[worker] excluidos {before - len(transactions)} pago(s) de tarjeta")
+
+    # Dedup by (description, date)
+    transactions = _dedup_transactions(transactions, account_type)
+
     for txn in transactions:
-        if is_credit_card and _is_cc_payment(txn.get("description", "")):
-            print(f"[worker] excluido pago de tarjeta: {txn['description']!r}")
-            continue
         row = Transaction(
             upload_id=upload.id,
             user_id=upload.user_id,
