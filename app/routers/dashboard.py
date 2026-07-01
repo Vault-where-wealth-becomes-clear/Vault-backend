@@ -26,16 +26,24 @@ from app.services.dashboard_service import (
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 
-def _parse_period(period: str | None) -> date:
+def _previous_month(period_month: date) -> date:
+    return (period_month - timedelta(days=1)).replace(day=1)
+
+
+async def _resolve_period(period: str | None, db: AsyncSession, user_id) -> date:
     if period:
         year, month = (int(p) for p in period.split("-"))
         return date(year, month, 1)
+    latest = await db.scalar(
+        select(FinancialSnapshot.period_month)
+        .where(FinancialSnapshot.user_id == user_id)
+        .order_by(FinancialSnapshot.period_month.desc())
+        .limit(1)
+    )
+    if latest:
+        return latest
     today = date.today()
     return date(today.year, today.month, 1)
-
-
-def _previous_month(period_month: date) -> date:
-    return (period_month - timedelta(days=1)).replace(day=1)
 
 
 @router.get("", response_model=DashboardResponse)
@@ -44,9 +52,20 @@ async def get_dashboard(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    period_month = _parse_period(period)
+    period_month = await _resolve_period(period, db, current_user.id)
     current = await get_month_summary(db, current_user.id, period_month)
     previous = await get_month_summary(db, current_user.id, _previous_month(period_month))
+
+    snapshot = await db.scalar(
+        select(FinancialSnapshot).where(
+            FinancialSnapshot.user_id == current_user.id,
+            FinancialSnapshot.period_month == period_month,
+        )
+    )
+    if snapshot and snapshot.tablero_general:
+        tg_usd = snapshot.tablero_general.get("patrimonio_total_usd")
+        if tg_usd is not None:
+            current.total_usd = Decimal(str(tg_usd))
 
     variation_pct = Decimal("0")
     if previous.total_usd:
@@ -66,7 +85,7 @@ async def get_breakdown(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    period_month = _parse_period(period)
+    period_month = await _resolve_period(period, db, current_user.id)
     summary = await get_month_summary(db, current_user.id, period_month)
 
     total_ars = sum(summary.by_category.values()) or Decimal("1")
@@ -115,7 +134,7 @@ async def get_full_dashboard(
     financial_snapshots. El frontend arma las secciones del dashboard según qué
     claves vengan presentes (no todas siempre van).
     """
-    period_month = _parse_period(period)
+    period_month = await _resolve_period(period, db, current_user.id)
     snapshot = await db.scalar(
         select(FinancialSnapshot).where(
             FinancialSnapshot.user_id == current_user.id,

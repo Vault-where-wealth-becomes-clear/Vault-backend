@@ -30,6 +30,7 @@ Agrupar todos los gastos del período en categorías, y clasificar los ingresos 
 | EDUCACIÓN | Cursos, libros, capacitación, colegio, universidad |
 | VIAJES | Hoteles, vuelos, turismo, excursiones, alojamiento temporario |
 | INVERSIONES | Depósitos a plazo, aportes a fondos de inversión (excluye compra de divisas — ver CONVERSIÓN PATRIMONIAL) |
+| IMPUESTOS | IIBB, IVA RG, DB.RG, Impuesto PAIS, Percepción AFIP, Percepción IIBB y cualquier cargo emitido por organismos estatales o recaudatorios. Nunca clasificar estos ítems en VARIOS |
 | VARIOS | Todo lo que no encaja en otra categoría |
 
 **Subcategorías especiales (no son categorías de gasto — no afectan la tasa de ahorro):**
