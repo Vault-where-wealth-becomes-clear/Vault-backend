@@ -33,7 +33,7 @@ async def process_upload(message: dict) -> None:
     upload_id = uuid.UUID(message["upload_id"])
     user_id = uuid.UUID(message["user_id"])
     account_type = message["account_type"]
-    period_month = date.fromisoformat(message["period_month"])
+    hint_period = date.fromisoformat(message["period_month"])  # user-selected hint only
     s3_key = message["s3_key_pdf"]
     requested_modules = message.get("requested_modules") or [SkillModule.flujo_mensual.value]
 
@@ -48,24 +48,20 @@ async def process_upload(message: dict) -> None:
 
             s3 = S3Client()
             file_bytes = await s3.download_bytes(s3_key)
-            text = extract_text(file_bytes, s3_key)
-            text = redact_sensitive_numbers(text)
-            detected_bank = detect_bank(text)
+            extracted_text = extract_text(file_bytes, s3_key)
+            extracted_text = redact_sensitive_numbers(extracted_text)
+            detected_bank = detect_bank(extracted_text)
 
             category_rules = await _get_category_rules(db, user_id)
-            mep_rate = await _get_mep_rate(db, period_month)
-            pending_mep = mep_rate is None
-            effective_rate = mep_rate or Decimal("1")
-
-            user_history = await _get_financial_snapshot(db, user_id, period_month)
+            user_history = await _get_financial_snapshot(db, user_id, hint_period)
             resolved_modules = resolve_required_modules(requested_modules, user_history)
 
             system_prompt = build_skill_system_prompt(resolved_modules)
             user_message = _build_user_message(
-                text,
+                extracted_text,
                 account_type,
                 category_rules,
-                period_month.strftime("%Y-%m"),
+                hint_period.strftime("%Y-%m"),
                 resolved_modules,
                 user_history,
             )
@@ -73,17 +69,65 @@ async def process_upload(message: dict) -> None:
             raw_response = call_llm_with_skill(user_message, system_prompt)
             result = parse_skill_response(raw_response)
 
-            transactions = result["transacciones"]
-            transactions = _apply_fiscal_rules(transactions)
-            transactions = apply_mep_conversion(transactions, effective_rate)
-            installments = extract_installments(transactions)
-            auto_txns, review_txns = split_by_confidence(
-                transactions, settings.confidence_threshold
-            )
-            await _save_transactions(db, upload, auto_txns + review_txns, account_type)
-            await _save_installments(db, upload, installments)
+            raw_transactions = result["transacciones"]
+            raw_transactions = _apply_fiscal_rules(raw_transactions)
 
-            await _upsert_financial_snapshot(db, user_id, period_month, result)
+            # Group by detected month — ignores user-selected hint_period
+            txn_by_month = _group_by_month(raw_transactions)
+            months = sorted(txn_by_month.keys())
+            if not months:
+                raise ValueError("El LLM no devolvió transacciones con fechas válidas")
+
+            is_usd_account = account_type in {"checking_usd", "credit_card_usd", "broker", "crypto"}
+            opening_ars, opening_usd = _extract_opening_balance(result, is_usd_account)
+
+            if len(months) > 1:
+                print(f"[worker] PDF multi-período detectado: {months}")
+
+            has_any_review = False
+            for i, month_key in enumerate(months):
+                sub_period = date.fromisoformat(month_key + "-01")
+                sub_txns_raw = txn_by_month[month_key]
+
+                sub_mep = await _get_mep_rate(db, sub_period)
+                sub_rate = sub_mep or Decimal("1")
+
+                sub_txns = apply_mep_conversion(list(sub_txns_raw), sub_rate)
+                sub_installments = extract_installments(sub_txns)
+                sub_auto, sub_review = split_by_confidence(sub_txns, settings.confidence_threshold)
+
+                if i == 0:
+                    sub_upload = upload
+                    sub_upload.period_month = sub_period
+                    sub_upload.opening_balance_ars = opening_ars
+                    sub_upload.opening_balance_usd = opening_usd
+                else:
+                    sub_upload = Upload(
+                        user_id=user_id,
+                        account_id=upload.account_id,
+                        s3_key_pdf=s3_key,
+                        period_month=sub_period,
+                        status=UploadStatus.processing,
+                        requested_modules=upload.requested_modules,
+                        opening_balance_ars=Decimal("0"),
+                        opening_balance_usd=Decimal("0"),
+                    )
+                    db.add(sub_upload)
+                    await db.flush()
+                    print(f"[worker] sub-upload {sub_upload.id} creado para {month_key}")
+
+                await _save_transactions(db, sub_upload, sub_auto + sub_review, account_type)
+                await _save_installments(db, sub_upload, sub_installments)
+
+                sub_upload.detected_bank = detected_bank
+                sub_upload.pending_mep = sub_mep is None
+                sub_upload.status = UploadStatus.review if sub_review else UploadStatus.done
+                sub_upload.processed_at = datetime.utcnow()
+                has_any_review = has_any_review or bool(sub_review)
+
+            # Snapshot and balances: last detected period wins
+            last_period = date.fromisoformat(months[-1] + "-01")
+            await _upsert_financial_snapshot(db, user_id, last_period, result)
             await _update_account_balances(db, upload, result)
             await _save_module_request_results(db, upload.id, resolved_modules, result)
 
@@ -92,10 +136,6 @@ async def process_upload(message: dict) -> None:
             except Exception as cleanup_exc:
                 print(f"[worker] no se pudo borrar {s3_key} de S3: {cleanup_exc}")
 
-            upload.detected_bank = detected_bank
-            upload.pending_mep = pending_mep
-            upload.status = UploadStatus.review if review_txns else UploadStatus.done
-            upload.processed_at = datetime.utcnow()
             await db.commit()
         except Exception as exc:
             await db.rollback()
@@ -230,6 +270,29 @@ async def _save_module_request_results(
         if result_json is None:
             existing.error_message = "La skill no devolvió datos para este módulo"
     await db.flush()
+
+
+def _group_by_month(transactions: list[dict]) -> dict[str, list[dict]]:
+    """Group transactions by 'YYYY-MM' extracted from each transaction's date field."""
+    groups: dict[str, list[dict]] = {}
+    for txn in transactions:
+        month_key = (txn.get("date") or "")[:7]
+        if month_key:
+            groups.setdefault(month_key, []).append(txn)
+    return groups
+
+
+def _extract_opening_balance(result: dict, is_usd: bool = False) -> tuple[Decimal, Decimal]:
+    """Read saldo_inicial from flujo_mensual.libro_diario (first valid account entry)."""
+    libro = (result.get("flujo_mensual") or {}).get("libro_diario") or {}
+    for account_data in libro.values():
+        if not isinstance(account_data, dict):
+            continue
+        val = account_data.get("saldo_inicial")
+        if val is not None and val != 0:
+            saldo = Decimal(str(val))
+            return (Decimal("0"), saldo) if is_usd else (saldo, Decimal("0"))
+    return Decimal("0"), Decimal("0")
 
 
 _CREDIT_CARD_TYPES = {"credit_card_ars", "credit_card_usd"}

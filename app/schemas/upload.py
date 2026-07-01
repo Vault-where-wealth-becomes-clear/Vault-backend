@@ -1,5 +1,6 @@
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -45,6 +46,8 @@ class UploadRead(BaseModel):
     error_message: str | None
     requested_modules: list[str]
     pending_mep: bool
+    opening_balance_ars: Decimal = Decimal("0")
+    opening_balance_usd: Decimal = Decimal("0")
     uploaded_at: datetime
     processed_at: datetime | None
 
