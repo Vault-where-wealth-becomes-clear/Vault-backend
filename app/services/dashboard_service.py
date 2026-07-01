@@ -31,14 +31,15 @@ async def get_patrimonio_actual(db: AsyncSession, user_id, period_month: date) -
         select(ExchangeRate.mep_rate).where(ExchangeRate.period_month == period_month)
     )
     if mep is None:
-        # Fallback: MEP más reciente anterior al período
         mep = await db.scalar(
             select(ExchangeRate.mep_rate)
             .where(ExchangeRate.period_month <= period_month)
             .order_by(ExchangeRate.period_month.desc())
             .limit(1)
         )
-    mep = Decimal(str(mep)) if mep else Decimal("1")
+    if mep is None:
+        return Decimal("0")  # no MEP loaded at all — return 0 rather than inflate with 1:1
+    mep = Decimal(str(mep))
 
     rows = await db.execute(
         select(Account.current_balance, Account.currency)
