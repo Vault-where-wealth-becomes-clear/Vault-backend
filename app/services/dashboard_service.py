@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
 from app.models.enums import AccountType, CurrencyType
+from app.models.exchange_rate import ExchangeRate
 from app.models.financial_snapshot import FinancialSnapshot
 from app.models.transaction import Transaction
 
@@ -49,17 +50,30 @@ async def get_month_summary(db: AsyncSession, user_id, period_month: date) -> Mo
 
     savings = income_ars + expense_ars  # expense_ars ya es negativo
 
-    # Incluir saldo de cuentas que no generan transacciones (efectivo y cripto en USD)
+    # Incluir saldo de cuentas que no generan transacciones (efectivo y cripto),
+    # convirtiendo las que estan en ARS via el TC MEP del periodo en vez de
+    # mezclarlas sin convertir o excluirlas.
+    mep_rate = await db.scalar(
+        select(ExchangeRate.mep_rate).where(
+            extract("year", ExchangeRate.period_month) == period_month.year,
+            extract("month", ExchangeRate.period_month) == period_month.month,
+        )
+    )
     cash_rows = await db.execute(
         select(Account.current_balance, Account.currency).where(
             Account.user_id == user_id,
             Account.is_active.is_(True),
             Account.account_type.in_([AccountType.cash, AccountType.crypto]),
-            Account.currency == CurrencyType.USD,
         )
     )
-    for balance, _ in cash_rows:
-        total_usd += balance or Decimal("0")
+    for balance, currency in cash_rows:
+        balance = balance or Decimal("0")
+        if currency == CurrencyType.USD:
+            total_usd += balance
+        elif mep_rate:
+            total_usd += balance / mep_rate
+        # Si es ARS y no hay TC declarado para el periodo, se omite: no se puede
+        # convertir de forma segura, y sumarlo sin convertir mezclaria las monedas.
 
     return MonthSummary(total_usd=total_usd, savings=savings, by_category=by_category)
 
