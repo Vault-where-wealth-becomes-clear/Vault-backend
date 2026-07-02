@@ -61,6 +61,16 @@ Reglas estrictas para `tablero_general`:
 La clave "transacciones" es OBLIGATORIA siempre, sin importar qué módulos se pidieron —
 es el detalle transaccional plano que alimenta el registro histórico de movimientos.
 
+**Categorías válidas para el campo `category` de cada transacción:**
+
+Gastos: `Supermercado`, `Restaurantes`, `Transporte`, `Salud`, `Indumentaria`, `Tecnología`, `Entretenimiento`, `Servicios`, `Educación`, `Viajes`, `Suscripciones`, `Impuestos`, `Varios`
+
+Ingresos y movimientos: `Ingreso operativo`, `Rendimiento`, `Cambio de moneda`, `Pago deuda`, `Transferencia interna`
+
+Transitorio: `Reintegro`, `Sin categoría`
+
+Usar exactamente estos strings. Nunca usar sinónimos (`Gastronomía`, `Salidas`, `Ropa`, `Interno`, `Liq.deuda`, `Conversión patrimonial`, etc.) — si no encaja en ninguna categoría de gasto, usar `Varios`.
+
 **Reglas estrictas para el array `transacciones`:**
 
 1. **Una línea del PDF = una entrada en `transacciones`**. Nunca generar dos entradas para la misma fila del extracto (por ejemplo, una en ARS y otra en USD). Si la fila tiene valores en ambas columnas (Pesos y Dólares), elegir UNO según las reglas de moneda abajo.

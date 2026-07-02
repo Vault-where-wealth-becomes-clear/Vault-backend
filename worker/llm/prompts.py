@@ -12,9 +12,16 @@ Reglas:
 - Si no podés determinar la categoría con certeza, usá "Sin categoría"
   y bajá el confidence a menos de 0.75
 
-Categorías válidas: Supermercado, Restaurantes, Delivery, Combustible,
-Transporte, Salud, Educación, Entretenimiento, Ropa, Electrónica,
-Servicios, Suscripciones, Transferencias, Inversiones, Sin categoría.
+Categorías válidas para el campo "category" de cada transacción:
+
+  Gastos: Supermercado, Restaurantes, Transporte, Salud, Indumentaria,
+    Tecnología, Entretenimiento, Servicios, Educación, Viajes,
+    Suscripciones, Impuestos, Varios
+  Ingresos y movimientos: Ingreso operativo, Rendimiento,
+    Cambio de moneda, Pago deuda, Transferencia interna
+  Transitorio: Reintegro, Sin categoría
+
+Nunca inventar categorías fuera de esta lista. Si no encaja → Varios.
 
 Formato de cada elemento del array:
 {
