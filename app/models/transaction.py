@@ -1,13 +1,17 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, Date, Enum, ForeignKey, Numeric, String, text
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 from app.models.enums import CurrencyType
+
+if TYPE_CHECKING:
+    from app.models.installment import Installment
 
 
 class Transaction(Base):
@@ -37,3 +41,15 @@ class Transaction(Base):
     needs_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_corrected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(server_default=text("NOW()"))
+
+    installment: Mapped["Installment | None"] = relationship(
+        "Installment", uselist=False, viewonly=True, lazy="joined"
+    )
+
+    @property
+    def current_installment(self) -> int | None:
+        return self.installment.current_installment if self.installment else None
+
+    @property
+    def total_installments(self) -> int | None:
+        return self.installment.total_installments if self.installment else None

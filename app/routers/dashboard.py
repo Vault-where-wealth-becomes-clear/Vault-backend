@@ -13,6 +13,7 @@ from app.schemas.dashboard import (
     CategoryBreakdownItem,
     DashboardBreakdownResponse,
     DashboardEvolutionResponse,
+    DashboardMonthlySeriesResponse,
     DashboardResponse,
     EvolutionPoint,
     FullDashboardResponse,
@@ -22,6 +23,7 @@ from app.services.dashboard_service import (
     generate_snapshot_insights,
     get_flujo_del_mes,
     get_month_summary,
+    get_monthly_series,
     get_patrimonio_actual,
 )
 
@@ -69,12 +71,13 @@ async def get_dashboard(
         variation_pct = ((current.total_usd - previous.total_usd) / previous.total_usd) * 100
 
     flujo = await get_flujo_del_mes(db, current_user.id, period_month)
+    previous_flujo = await get_flujo_del_mes(db, current_user.id, _previous_month(period_month))
 
     return DashboardResponse(
         total_usd=current.total_usd,
         variation_pct=variation_pct,
         period=period_month.strftime("%Y-%m"),
-        insights=generate_insights(current, previous),
+        insights=generate_insights(current, previous, flujo, previous_flujo),
         flujo_del_mes=flujo,
     )
 
@@ -144,6 +147,18 @@ async def get_evolution(
                     points.append(EvolutionPoint(month=month.strftime("%Y-%m"), total_usd=float(pat)))
 
     return DashboardEvolutionResponse(points=points)
+
+
+@router.get("/monthly-series", response_model=DashboardMonthlySeriesResponse)
+async def get_monthly_series_endpoint(
+    period: str | None = Query(default=None),
+    months: int = Query(default=6, ge=1, le=24),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    anchor = await _resolve_period(period, db, current_user.id)
+    points = await get_monthly_series(db, current_user.id, anchor, count=months)
+    return DashboardMonthlySeriesResponse(points=points)
 
 
 @router.get("/full", response_model=FullDashboardResponse)

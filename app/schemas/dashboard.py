@@ -41,6 +41,21 @@ class DashboardEvolutionResponse(BaseModel):
     points: list[EvolutionPoint]
 
 
+class MonthlySeriesPoint(BaseModel):
+    month: str
+    ingresos_ars: float
+    egresos_ars: float
+    resultado_ars: float
+    resultado_usd: float | None
+    gasto_usd: float | None
+    patrimonio_usd: float | None
+    cartera_usd: float | None
+
+
+class DashboardMonthlySeriesResponse(BaseModel):
+    points: list[MonthlySeriesPoint]
+
+
 class FullDashboardResponse(BaseModel):
     period: date_type
     flujo_mensual: dict[str, Any] | None = None

@@ -37,7 +37,7 @@ objeto JSON válido, sin texto adicional antes o después, con esta estructura
   },
   "transacciones": [
     { "date": "2025-06-01", "description": "...", "amount": 0, "currency": "ARS", "category": "...", "confidence": 0.95, "installments": null },
-    { "date": "2025-06-02", "description": "...", "amount": -9000, "currency": "ARS", "category": "...", "confidence": 0.95, "installments": { "current": 3, "total": 12, "amount_per": 3000 } }
+    { "date": "2025-06-02", "description": "...", "amount": -3000, "currency": "ARS", "category": "...", "confidence": 0.95, "installments": { "current": 3, "total": 12, "amount_per": 3000 } }
   ]
 }
 ```
@@ -49,6 +49,9 @@ Reglas estrictas para el campo `installments`:
   - `"total"`: entero — total de cuotas (ej. `12`)
   - `"amount_per"`: número — monto por cuota en la moneda de la transacción (ej. `3000`)
 - NUNCA usar un string como `"3/12"` o `"1/1"` — eso rompe el parser. Solo `null` u objeto.
+- **`amount` DEBE ser siempre igual a `installments.amount_per`, nunca al precio total de la compra financiada.** El campo `amount` de una transacción en cuotas representa únicamente lo que este resumen debita en este cierre — no el monto original de la compra ni `amount_per * total`. Aunque el PDF muestre el precio total de la compra en algún lugar de la fila, ese valor NUNCA va en `amount`.
+  - Correcto: compra en 12 cuotas de $3.000 c/u, esta es la cuota 3/12 → `"amount": -3000, "installments": {"current": 3, "total": 12, "amount_per": 3000}`.
+  - Incorrecto: `"amount": -36000` (eso es `amount_per * total`, el precio total de la compra) con `"installments": {"current": 3, "total": 12, "amount_per": 3000}` — `amount` y `amount_per` NUNCA deben diferir en una transacción con cuotas.
 
 Reglas estrictas para `tablero_general`:
 - `patrimonio_total_usd` es OBLIGATORIO: total de activos líquidos al cierre del período en USD.
@@ -75,11 +78,11 @@ Usar exactamente estos strings. Nunca usar sinónimos (`Gastronomía`, `Salidas`
 
 1. **Una línea del PDF = una entrada en `transacciones`**. Nunca generar dos entradas para la misma fila del extracto (por ejemplo, una en ARS y otra en USD). Si la fila tiene valores en ambas columnas (Pesos y Dólares), elegir UNO según las reglas de moneda abajo.
 
-2. **Elección de moneda por tipo de transacción (extractos de tarjeta de crédito en ARS):**
-   - Transacción en **ARS**: usar el valor de la columna Pesos → `"currency": "ARS"`.
-   - Transacción originada en **USD** (compra directa en dólares): usar el valor de la columna Dólares → `"currency": "USD"`.
-   - Transacción en **moneda extranjera que no es USD** (CLP, EUR, BRL, GBP, etc.): el banco ya convirtió ese monto a USD en la columna Dólares — usar ese valor → `"currency": "USD"`. Nunca usar el monto en la moneda original ni intentar convertirlo.
-   - **Impuestos y percepciones** (IIBB, IVA RG, DB.RG, Percepción AFIP, etc.): registrar en la moneda en que figura el importe en la fila. Si hay valor solo en la columna Pesos → `"currency": "ARS"`. Si hay valor solo en la columna Dólares → `"currency": "USD"`. Si hay valor en ambas columnas para el mismo ítem, registrar solo una vez en la moneda del importe principal (típicamente ARS para extractos locales).
+2. **Elección de moneda: la determina EXCLUSIVAMENTE la columna del PDF donde figura el importe, nunca el texto de la descripción ni el tipo de comercio.**
+   - Monto impreso en la columna **Pesos** → `"currency": "ARS"`, y `"amount"` = ese mismo número, tal cual figura impreso. Nunca reconvertir.
+   - Monto impreso en la columna **Dólares** → `"currency": "USD"`, y `"amount"` = ese mismo número, tal cual figura impreso. Nunca reconvertir.
+   - Esto aplica igual para compras directas en USD, compras en moneda extranjera que no es USD (CLP, EUR, BRL, GBP, etc. — el banco ya las convirtió a USD en la columna Dólares) e impuestos/percepciones (IIBB, IVA RG, DB.RG, etc.). Si hay valor en ambas columnas para el mismo ítem, registrar solo una vez en la columna del importe principal (típicamente Pesos para extractos locales).
+   - **Prohibido**: tomar el número de una columna y guardarlo con la moneda de la otra, o "reconstruir" el monto a partir del tipo de cambio en vez de leer directamente el número impreso en la columna correspondiente. Ejemplo de error real detectado: una compra de "USD 20,00" (columna Dólares) terminó guardada como `amount: -20, currency: "ARS"` — el monto es correcto, la moneda no. El resultado correcto es `amount: -20, currency: "USD"`.
 
 3. El campo `amount` es **siempre negativo para gastos** y positivo para créditos/devoluciones, en la moneda elegida según la regla anterior.
 
