@@ -40,5 +40,11 @@ class Upload(Base):
     opening_balance_usd: Mapped[Decimal] = mapped_column(
         Numeric(15, 6), nullable=False, server_default=text("0")
     )
+    closing_balance_ars: Mapped[Decimal] = mapped_column(
+        Numeric(15, 4), nullable=False, server_default=text("0")
+    )
+    closing_balance_usd: Mapped[Decimal] = mapped_column(
+        Numeric(15, 6), nullable=False, server_default=text("0")
+    )
     uploaded_at: Mapped[datetime] = mapped_column(server_default=text("NOW()"))
     processed_at: Mapped[datetime | None] = mapped_column()

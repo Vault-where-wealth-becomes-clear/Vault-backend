@@ -23,6 +23,16 @@ class Settings(BaseSettings):
 
     # LLM
     llm_model: str = "claude-3-5-haiku-20241022"
+    # Extractos grandes/multi-período (ej. resúmenes de CA consolidados de
+    # varios meses) hacen que el modelo chico se "dé por terminado" tras el
+    # primer período reconciliado, incluso con la instrucción explícita de
+    # no hacerlo — probado con claude-haiku-4-5: 0/3 intentos completos en un
+    # documento de 49 movimientos / 4 meses, siempre end_turn temprano, no un
+    # problema de max_tokens. Un modelo más grande sí lo resuelve. Se usa
+    # solo cuando hace falta (ver LLM_LARGE_DOC_THRESHOLD) para no pagar el
+    # costo mayor en la mayoría de las cargas, que son extractos chicos.
+    llm_model_large: str = "claude-sonnet-5"
+    llm_large_doc_threshold: int = 30
     anthropic_api_key: str = ""
 
     # App

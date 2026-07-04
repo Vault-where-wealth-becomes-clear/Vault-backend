@@ -35,9 +35,12 @@ objeto JSON válido, sin texto adicional antes o después, con esta estructura
   "compromisos_futuros": {
     "cuotas_pendientes": [ { "descripcion": "...", "cuota_actual": 0, "total_cuotas": 0, "monto": 0, "proximo_vencimiento": "2025-07-15" } ]
   },
+  "saldo_tarjeta": {
+    "saldo_anterior_ars": 0, "pago_ars": 0, "saldo_anterior_usd": 0, "pago_usd": 0
+  },
   "transacciones": [
-    { "date": "2025-06-01", "description": "...", "amount": 0, "currency": "ARS", "category": "...", "confidence": 0.95, "installments": null },
-    { "date": "2025-06-02", "description": "...", "amount": -3000, "currency": "ARS", "category": "...", "confidence": 0.95, "installments": { "current": 3, "total": 12, "amount_per": 3000 } }
+    { "date": "2025-06-01", "description": "...", "amount": 0, "currency": "ARS", "category": "...", "confidence": 0.95, "installments": null, "cupon": null },
+    { "date": "2025-06-02", "description": "...", "amount": -3000, "currency": "ARS", "category": "...", "confidence": 0.95, "installments": { "current": 3, "total": 12, "amount_per": 3000 }, "cupon": "561721" }
   ]
 }
 ```
@@ -52,6 +55,9 @@ Reglas estrictas para el campo `installments`:
 - **`amount` DEBE ser siempre igual a `installments.amount_per`, nunca al precio total de la compra financiada.** El campo `amount` de una transacción en cuotas representa únicamente lo que este resumen debita en este cierre — no el monto original de la compra ni `amount_per * total`. Aunque el PDF muestre el precio total de la compra en algún lugar de la fila, ese valor NUNCA va en `amount`.
   - Correcto: compra en 12 cuotas de $3.000 c/u, esta es la cuota 3/12 → `"amount": -3000, "installments": {"current": 3, "total": 12, "amount_per": 3000}`.
   - Incorrecto: `"amount": -36000` (eso es `amount_per * total`, el precio total de la compra) con `"installments": {"current": 3, "total": 12, "amount_per": 3000}` — `amount` y `amount_per` NUNCA deben diferir en una transacción con cuotas.
+  - **Error inverso, igual de grave — NUNCA dividir el número impreso por `total`:** el valor que figura impreso en la columna Pesos/Dólares de la fila **ya es** lo que se debita este cierre (la cuota actual), no el precio total de la compra. No lo tomes como "precio total" ni lo dividas por la cantidad de cuotas para obtener `amount_per`.
+    - Ejemplo real: la fila dice `MERPAGO*STARTCOMAR C.09/12 561721 19.166,58` → el importe impreso, 19.166,58, es la cuota 9/12 que se cobra en este resumen. Correcto: `"amount": -19166.58, "installments": {"current": 9, "total": 12, "amount_per": 19166.58}`. Incorrecto: `"amount": -1597.22` (=19166.58/12) — eso divide por la cantidad de cuotas un valor que no necesita división, porque el banco ya imprimió el monto de esta cuota específica.
+    - Regla simple: `amount` y `amount_per` son SIEMPRE el número tal cual aparece impreso en la fila del PDF — nunca lo multipliques ni lo dividas por `total` ni por `current`.
 
 Reglas estrictas para `tablero_general`:
 - `patrimonio_total_usd` es OBLIGATORIO: total de activos líquidos al cierre del período en USD.
@@ -76,6 +82,8 @@ Usar exactamente estos strings. Nunca usar sinónimos (`Gastronomía`, `Salidas`
 
 **Reglas estrictas para el array `transacciones`:**
 
+0. **Extractos consolidados que juntan varios meses: `transacciones` incluye TODOS los movimientos de TODOS los meses, sin excepción.** Un mismo PDF puede traer "SALDO ANTERIOR" seguido de movimientos de enero, después febrero, marzo, etc., todos en una sola sección "Movimientos en cuentas" — es un solo documento, no un documento por mes. Terminar de reconciliar el `libro_diario` de un mes (SI → SF cerrando bien) **no es una señal para parar** — es una señal para seguir con el mes siguiente que continúa en el mismo texto. Contá las filas de la sección de movimientos antes de responder: si el extracto tiene N filas con fecha, `transacciones` debe tener N entradas (menos las excluidas explícitamente por otra regla, ej. pagos de tarjeta). Si te faltó una fila, tu respuesta está incompleta — no la envíes así.
+
 1. **Una línea del PDF = una entrada en `transacciones`**. Nunca generar dos entradas para la misma fila del extracto (por ejemplo, una en ARS y otra en USD). Si la fila tiene valores en ambas columnas (Pesos y Dólares), elegir UNO según las reglas de moneda abajo.
 
 2. **Elección de moneda: la determina EXCLUSIVAMENTE la columna del PDF donde figura el importe, nunca el texto de la descripción ni el tipo de comercio.**
@@ -89,3 +97,20 @@ Usar exactamente estos strings. Nunca usar sinónimos (`Gastronomía`, `Salidas`
 4. **Prefijo DB. vs CR. en cargos fiscales:**
    - Descripción empieza con `DB.` (ej. `DB.RG`, `DB.IVA`) → débito fiscal, `amount` **negativo**, categoría **Impuestos**.
    - Descripción empieza con `CR.` (ej. `CR.RG`, `CR.IVA`) → crédito fiscal (devolución del banco), `amount` **positivo**, categoría **Impuestos**.
+
+5. **Campo `cupon` — copiar literal, nunca inventar ni calcular:**
+   - Si la fila del extracto tiene una columna "NRO. CUPÓN" (u equivalente: número de operación, número de comprobante), copiar ese valor tal cual, como string: `"cupon": "561721"`.
+   - Si el extracto no muestra ese número para esa línea (ej. líneas de impuestos/CR./DB., o bancos que no lo imprimen), usar `"cupon": null`.
+   - Este campo se usa para verificar el monto contra el texto original — nunca lo omitas cuando el dato está impreso, y nunca lo completes con un valor que no viste impreso.
+
+**Campo `saldo_tarjeta` (solo resúmenes de tarjeta de crédito):**
+
+Aunque las líneas "SALDO ANTERIOR" y "SU PAGO EN PESOS/USD" se excluyen del array
+`transacciones` (regla de arriba, para no duplicar el egreso), sus valores SÍ se
+reportan acá tal cual figuran impresos, sin ningún cálculo:
+- `saldo_anterior_ars` / `saldo_anterior_usd`: el valor de la fila "SALDO ANTERIOR".
+- `pago_ars` / `pago_usd`: el valor absoluto de "SU PAGO EN PESOS" / "SU PAGO EN USD"
+  (y variantes: "SU PAGO ANTERIOR", "PAGO MÍNIMO ANTERIOR"). Si hay más de una línea
+  de pago en la misma moneda, sumarlas.
+Si el extracto no es de tarjeta de crédito, o no muestra estas líneas, usar `0` en
+las cuatro claves — nunca omitir el objeto completo.

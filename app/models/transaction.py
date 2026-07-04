@@ -3,7 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Date, Enum, ForeignKey, Numeric, String, text
+from sqlalchemy import Boolean, Date, Enum, ForeignKey, Integer, Numeric, String, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -40,6 +40,7 @@ class Transaction(Base):
     confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
     needs_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_corrected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(server_default=text("NOW()"))
 
     installment: Mapped["Installment | None"] = relationship(

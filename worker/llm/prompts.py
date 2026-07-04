@@ -54,7 +54,14 @@ ACCOUNT_TYPE_CONTEXT = {
     "broker": "Informe de cuenta comitente. Extraé operaciones: compras, ventas, dividendos, suscripciones FCI.",
     "crypto": "Extracto de billetera cripto. Extraé movimientos por token con precio en USD.",
     "cash": "Registro de efectivo. Extraé ingresos y egresos declarados manualmente.",
-    "savings_box": "Caja de seguridad. Extraé el saldo declarado.",
+    # "savings_box" es el nombre interno del sistema para 'caja_de_ahorro' del
+    # vocabulario de 00_registro_cuentas.md — NO es una caja de seguridad
+    # física. Es una cuenta bancaria normal con movimientos periódicos.
+    "savings_box": (
+        "Extracto de caja de ahorro (savings_box = caja_de_ahorro) en pesos o "
+        "dólares según corresponda. Extraé movimientos: débitos, créditos, "
+        "transferencias, intereses ganados — igual que una cuenta corriente."
+    ),
 }
 
 

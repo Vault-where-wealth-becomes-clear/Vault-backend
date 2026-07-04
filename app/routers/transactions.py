@@ -86,7 +86,9 @@ async def list_transactions(
     if date_to:
         query = query.where(Transaction.date <= date_to)
 
-    result = await db.scalars(query.order_by(Transaction.date.desc()))
+    result = await db.scalars(
+        query.order_by(Transaction.date.desc(), Transaction.sort_order.asc())
+    )
     return result.all()
 
 
