@@ -48,6 +48,8 @@ class UploadRead(BaseModel):
     pending_mep: bool
     opening_balance_ars: Decimal = Decimal("0")
     opening_balance_usd: Decimal = Decimal("0")
+    closing_balance_ars: Decimal = Decimal("0")
+    closing_balance_usd: Decimal = Decimal("0")
     uploaded_at: datetime
     processed_at: datetime | None
 

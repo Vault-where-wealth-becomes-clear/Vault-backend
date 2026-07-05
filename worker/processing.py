@@ -107,8 +107,19 @@ async def process_upload(message: dict) -> None:
             raw_transactions = _apply_fiscal_rules(raw_transactions)
             raw_transactions = _apply_transfer_direction_rules(raw_transactions)
 
-            # Group by detected month — ignores user-selected hint_period
-            txn_by_month = _group_by_month(raw_transactions)
+            if account_type in _CREDIT_CARD_ACCOUNT_TYPES:
+                # Un resumen de tarjeta es siempre UN único período de
+                # facturación, aunque las cuotas impriman la fecha de compra
+                # original de cada consumo (puede ser de más de un año
+                # atrás — ej. "19-May-25" para una cuota 12/12 que recién se
+                # cobra en el resumen de abril 2026). Agrupar por fecha de
+                # transacción crearía un período fantasma para esa fecha de
+                # compra vieja, sin tipo de cambio MEP cargado, y tiraba
+                # abajo toda la carga.
+                txn_by_month = {hint_period.strftime("%Y-%m"): raw_transactions}
+            else:
+                # Group by detected month — ignores user-selected hint_period
+                txn_by_month = _group_by_month(raw_transactions)
             months = sorted(txn_by_month.keys())
             if not months:
                 raise ValueError("El LLM no devolvió transacciones con fechas válidas")

@@ -2,7 +2,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import extract, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -134,8 +134,9 @@ async def get_evolution(
                 select(FinancialSnapshot)
                 .where(
                     FinancialSnapshot.user_id == current_user.id,
-                    extract("year", FinancialSnapshot.period_month) == month.year,
-                    extract("month", FinancialSnapshot.period_month) == month.month,
+                    # Match exacto de period_month — ver nota en
+                    # dashboard_service._get_patrimonio_for_series.
+                    FinancialSnapshot.period_month == month,
                     FinancialSnapshot.tablero_general.isnot(None),
                 )
                 .order_by(FinancialSnapshot.period_month.desc())
