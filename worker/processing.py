@@ -77,8 +77,15 @@ async def process_upload(message: dict) -> None:
 
             model = select_model(extracted_text)
             print(f"[worker] modelo elegido: {model}")
-            raw_response = call_llm_with_skill(user_message, system_prompt, model=model)
+            raw_response, llm_usage = call_llm_with_skill(user_message, system_prompt, model=model)
             result = parse_skill_response(raw_response)
+
+            upload.llm_model_used = llm_usage["model"]
+            upload.llm_input_tokens = llm_usage["input_tokens"]
+            upload.llm_output_tokens = llm_usage["output_tokens"]
+            upload.llm_thinking_tokens = llm_usage["thinking_tokens"]
+            upload.llm_cache_read_tokens = llm_usage["cache_read_tokens"]
+            upload.llm_cache_creation_tokens = llm_usage["cache_creation_tokens"]
 
             raw_transactions = result["transacciones"]
             raw_transactions = verify_and_correct_amounts(raw_transactions, extracted_text)

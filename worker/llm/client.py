@@ -31,7 +31,9 @@ def call_llm(prompt: str, system: str) -> str:
     return _extract_text(message)
 
 
-def call_llm_with_skill(prompt: str, system: str, model: str | None = None) -> str:
+def call_llm_with_skill(
+    prompt: str, system: str, model: str | None = None
+) -> tuple[str, dict]:
     """
     Llama al LLM con el system prompt de la skill (módulos dinámicos), activando
     cache_control sobre el bloque de system para no pagar precio completo en cada
@@ -41,10 +43,30 @@ def call_llm_with_skill(prompt: str, system: str, model: str | None = None) -> s
     settings.llm_model_large para extractos grandes — ver
     worker/llm/model_selector.py, que decide esto automáticamente según la
     cantidad de movimientos detectados en el texto, sin gastar tokens.
+
+    Devuelve (texto, uso) — `uso` es un dict con el detalle de tokens para que
+    el caller lo persista (ver Upload.llm_*), en vez de que quede solo en el
+    log de la terminal.
     """
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    resolved_model = model or settings.llm_model
+
+    extra_body: dict = {}
+    if resolved_model == settings.llm_model_large:
+        # Sonnet 5 corre con adaptive thinking + effort "high" por defecto
+        # cuando no se especifica nada — para una tarea de extracción
+        # estructurada (no razonamiento abierto) eso generó 15k+ tokens de
+        # thinking por PDF sin necesidad. "medium" da un nivel de
+        # inteligencia comparable al "high" de Sonnet 4.6 con mucho menos
+        # gasto y latencia.
+        # extra_body (no kwargs directos): el SDK instalado (anthropic==0.28.0)
+        # es anterior a que "thinking"/"output_config" existieran como
+        # parámetros tipados — pasarlos como kwargs tira TypeError.
+        extra_body["thinking"] = {"type": "adaptive"}
+        extra_body["output_config"] = {"effort": "medium"}
+
     message = client.messages.create(
-        model=model or settings.llm_model,
+        model=resolved_model,
         # 64k, no 16k/32k: con extended thinking, los tokens de razonamiento
         # cuentan contra max_tokens, y varían de una corrida a otra — en
         # pruebas con CA ABR.pdf (49 movimientos, 4 meses) se vieron 15k+
@@ -63,14 +85,23 @@ def call_llm_with_skill(prompt: str, system: str, model: str | None = None) -> s
             }
         ],
         messages=[{"role": "user", "content": prompt}],
+        extra_body=extra_body or None,
     )
     usage = message.usage
-    thinking_tokens = getattr(usage, "output_tokens_details", None)
-    thinking_tokens = getattr(thinking_tokens, "thinking_tokens", 0) if thinking_tokens else 0
+    # output_tokens_details llega como dict crudo, no como submodelo, porque
+    # el SDK instalado (0.28.0) es anterior a que este campo existiera —
+    # Usage lo guarda vía extra="allow" pero sin parsearlo a un objeto, así
+    # que getattr() sobre él siempre fallaba en silencio y reportaba 0.
+    thinking_details = getattr(usage, "output_tokens_details", None)
+    if isinstance(thinking_details, dict):
+        thinking_tokens = thinking_details.get("thinking_tokens", 0)
+    else:
+        thinking_tokens = getattr(thinking_details, "thinking_tokens", 0) if thinking_details else 0
+    cache_read = getattr(usage, "cache_read_input_tokens", 0)
+    cache_creation = getattr(usage, "cache_creation_input_tokens", 0)
     print(
         f"[worker] usage: input={usage.input_tokens} "
-        f"cache_read={getattr(usage, 'cache_read_input_tokens', 0)} "
-        f"cache_write={getattr(usage, 'cache_creation_input_tokens', 0)} "
+        f"cache_read={cache_read} cache_write={cache_creation} "
         f"output={usage.output_tokens} thinking={thinking_tokens} "
         f"stop_reason={message.stop_reason}"
     )
@@ -79,4 +110,12 @@ def call_llm_with_skill(prompt: str, system: str, model: str | None = None) -> s
             "La respuesta del LLM se cortó por límite de tokens (max_tokens) "
             "antes de terminar — no se puede confiar en el JSON parcial."
         )
-    return _extract_text(message)
+    usage_dict = {
+        "model": resolved_model,
+        "input_tokens": usage.input_tokens,
+        "output_tokens": usage.output_tokens,
+        "thinking_tokens": thinking_tokens,
+        "cache_read_tokens": cache_read,
+        "cache_creation_tokens": cache_creation,
+    }
+    return _extract_text(message), usage_dict
