@@ -2,7 +2,18 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import ARRAY, BigInteger, Boolean, Date, Enum, ForeignKey, Numeric, String, Text, text
+from sqlalchemy import (
+    ARRAY,
+    BigInteger,
+    Boolean,
+    Date,
+    Enum,
+    ForeignKey,
+    Numeric,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -47,10 +58,18 @@ class Upload(Base):
         Numeric(15, 6), nullable=False, server_default=text("0")
     )
     llm_model_used: Mapped[str | None] = mapped_column(String(100))
-    llm_input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default=text("0"))
-    llm_output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default=text("0"))
-    llm_thinking_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default=text("0"))
-    llm_cache_read_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default=text("0"))
+    llm_input_tokens: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default=text("0")
+    )
+    llm_output_tokens: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default=text("0")
+    )
+    llm_thinking_tokens: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default=text("0")
+    )
+    llm_cache_read_tokens: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default=text("0")
+    )
     llm_cache_creation_tokens: Mapped[int] = mapped_column(
         BigInteger, nullable=False, server_default=text("0")
     )
