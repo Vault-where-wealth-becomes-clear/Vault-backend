@@ -1,7 +1,19 @@
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 
-from sqlalchemy import ARRAY, Boolean, Date, Enum, ForeignKey, String, Text, text
+from sqlalchemy import (
+    ARRAY,
+    BigInteger,
+    Boolean,
+    Date,
+    Enum,
+    ForeignKey,
+    Numeric,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -33,5 +45,33 @@ class Upload(Base):
         ARRAY(String(50)), nullable=False, server_default=text("ARRAY['flujo_mensual']")
     )
     error_message: Mapped[str | None] = mapped_column(Text)
+    opening_balance_ars: Mapped[Decimal] = mapped_column(
+        Numeric(15, 4), nullable=False, server_default=text("0")
+    )
+    opening_balance_usd: Mapped[Decimal] = mapped_column(
+        Numeric(15, 6), nullable=False, server_default=text("0")
+    )
+    closing_balance_ars: Mapped[Decimal] = mapped_column(
+        Numeric(15, 4), nullable=False, server_default=text("0")
+    )
+    closing_balance_usd: Mapped[Decimal] = mapped_column(
+        Numeric(15, 6), nullable=False, server_default=text("0")
+    )
+    llm_model_used: Mapped[str | None] = mapped_column(String(100))
+    llm_input_tokens: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default=text("0")
+    )
+    llm_output_tokens: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default=text("0")
+    )
+    llm_thinking_tokens: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default=text("0")
+    )
+    llm_cache_read_tokens: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default=text("0")
+    )
+    llm_cache_creation_tokens: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default=text("0")
+    )
     uploaded_at: Mapped[datetime] = mapped_column(server_default=text("NOW()"))
     processed_at: Mapped[datetime | None] = mapped_column()
