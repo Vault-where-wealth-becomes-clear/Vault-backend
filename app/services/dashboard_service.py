@@ -175,8 +175,13 @@ async def _get_patrimonio_for_series(
         select(FinancialSnapshot)
         .where(
             FinancialSnapshot.user_id == user_id,
-            extract("year", FinancialSnapshot.period_month) == month.year,
-            extract("month", FinancialSnapshot.period_month) == month.month,
+            # Match exacto de period_month, no year/month: un snapshot con
+            # period_month distinto de "primero del mes" (datos viejos de
+            # prueba, ej. 2026-01-02) coincidía igual por año/mes y, al ser
+            # una fecha "más reciente", le ganaba en el order_by desc al
+            # snapshot real del mes — devolviendo el patrimonio vacío/viejo
+            # en vez del real.
+            FinancialSnapshot.period_month == month,
             FinancialSnapshot.tablero_general.isnot(None),
         )
         .order_by(FinancialSnapshot.period_month.desc())
@@ -199,8 +204,7 @@ async def _get_cartera_usd_for_month(
         select(FinancialSnapshot)
         .where(
             FinancialSnapshot.user_id == user_id,
-            extract("year", FinancialSnapshot.period_month) == month.year,
-            extract("month", FinancialSnapshot.period_month) == month.month,
+            FinancialSnapshot.period_month == month,
             FinancialSnapshot.cartera.isnot(None),
         )
         .order_by(FinancialSnapshot.period_month.desc())

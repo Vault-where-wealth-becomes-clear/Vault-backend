@@ -77,8 +77,15 @@ async def process_upload(message: dict) -> None:
 
             model = select_model(extracted_text)
             print(f"[worker] modelo elegido: {model}")
-            raw_response = call_llm_with_skill(user_message, system_prompt, model=model)
+            raw_response, llm_usage = call_llm_with_skill(user_message, system_prompt, model=model)
             result = parse_skill_response(raw_response)
+
+            upload.llm_model_used = llm_usage["model"]
+            upload.llm_input_tokens = llm_usage["input_tokens"]
+            upload.llm_output_tokens = llm_usage["output_tokens"]
+            upload.llm_thinking_tokens = llm_usage["thinking_tokens"]
+            upload.llm_cache_read_tokens = llm_usage["cache_read_tokens"]
+            upload.llm_cache_creation_tokens = llm_usage["cache_creation_tokens"]
 
             raw_transactions = result["transacciones"]
             raw_transactions = verify_and_correct_amounts(raw_transactions, extracted_text)
@@ -100,8 +107,19 @@ async def process_upload(message: dict) -> None:
             raw_transactions = _apply_fiscal_rules(raw_transactions)
             raw_transactions = _apply_transfer_direction_rules(raw_transactions)
 
-            # Group by detected month — ignores user-selected hint_period
-            txn_by_month = _group_by_month(raw_transactions)
+            if account_type in _CREDIT_CARD_ACCOUNT_TYPES:
+                # Un resumen de tarjeta es siempre UN único período de
+                # facturación, aunque las cuotas impriman la fecha de compra
+                # original de cada consumo (puede ser de más de un año
+                # atrás — ej. "19-May-25" para una cuota 12/12 que recién se
+                # cobra en el resumen de abril 2026). Agrupar por fecha de
+                # transacción crearía un período fantasma para esa fecha de
+                # compra vieja, sin tipo de cambio MEP cargado, y tiraba
+                # abajo toda la carga.
+                txn_by_month = {hint_period.strftime("%Y-%m"): raw_transactions}
+            else:
+                # Group by detected month — ignores user-selected hint_period
+                txn_by_month = _group_by_month(raw_transactions)
             months = sorted(txn_by_month.keys())
             if not months:
                 raise ValueError("El LLM no devolvió transacciones con fechas válidas")
