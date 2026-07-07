@@ -144,7 +144,9 @@ async def get_evolution(
             if snap and snap.tablero_general:
                 pat = snap.tablero_general.get("patrimonio_total_usd")
                 if pat is not None and float(pat) > 0:
-                    points.append(EvolutionPoint(month=month.strftime("%Y-%m"), total_usd=float(pat)))
+                    points.append(
+                        EvolutionPoint(month=month.strftime("%Y-%m"), total_usd=float(pat))
+                    )
 
     return DashboardEvolutionResponse(points=points)
 
