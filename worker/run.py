@@ -33,6 +33,7 @@ async def poll_loop() -> None:
         region_name=settings.aws_region,
         aws_access_key_id=settings.aws_access_key_id or None,
         aws_secret_access_key=settings.aws_secret_access_key or None,
+        endpoint_url=settings.aws_endpoint_url or None,
     )
 
     print(f"[worker] escuchando {settings.sqs_queue_url}")

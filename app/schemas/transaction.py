@@ -23,6 +23,8 @@ class TransactionRead(BaseModel):
     needs_review: bool
     is_corrected: bool
     created_at: datetime
+    current_installment: int | None = None
+    total_installments: int | None = None
 
 
 class TransactionUpdate(BaseModel):

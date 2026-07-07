@@ -12,9 +12,16 @@ Reglas:
 - Si no podés determinar la categoría con certeza, usá "Sin categoría"
   y bajá el confidence a menos de 0.75
 
-Categorías válidas: Supermercado, Restaurantes, Delivery, Combustible,
-Transporte, Salud, Educación, Entretenimiento, Ropa, Electrónica,
-Servicios, Suscripciones, Transferencias, Inversiones, Sin categoría.
+Categorías válidas para el campo "category" de cada transacción:
+
+  Gastos: Supermercado, Restaurantes, Transporte, Salud, Indumentaria,
+    Tecnología, Entretenimiento, Servicios, Educación, Viajes,
+    Suscripciones, Impuestos, Varios
+  Ingresos y movimientos: Ingreso operativo, Rendimiento,
+    Cambio de moneda, Pago deuda, Transferencia interna
+  Transitorio: Reintegro, Sin categoría
+
+Nunca inventar categorías fuera de esta lista. Si no encaja → Varios.
 
 Formato de cada elemento del array:
 {
@@ -32,14 +39,29 @@ Si hay cuotas:
 """
 
 ACCOUNT_TYPE_CONTEXT = {
-    "credit_card_ars": "Extracto de tarjeta de crédito en pesos argentinos. Extraé cada consumo, cuota e interés.",
+    "credit_card_ars": (
+        "Extracto de tarjeta de crédito en pesos argentinos. "
+        "Extraé cada consumo, cuota e interés. "
+        "Reglas de importe: (1) una fila del PDF = una sola entrada en transacciones, nunca duplicar la misma fila como ARS y como USD. "
+        "(2) Consumos en ARS: usar columna Pesos, currency='ARS'. "
+        "(3) Consumos en USD: usar columna Dólares, currency='USD'. "
+        "(4) Consumos en otras monedas (CLP, EUR, BRL, GBP, etc.): el banco ya calculó el equivalente en USD en la columna Dólares — usar ese valor, currency='USD'. No usar el monto en la moneda original ni calcular conversión propia. "
+        "(5) Impuestos y percepciones (IIBB, IVA RG, DB.RG, etc.): registrar una sola vez en la moneda del importe principal de esa fila."
+    ),
     "credit_card_usd": "Extracto de tarjeta de crédito en dólares. Extraé cada consumo en USD.",
     "checking_ars": "Extracto de cuenta corriente en pesos. Extraé movimientos: débitos, créditos, transferencias.",
     "checking_usd": "Extracto de cuenta en dólares. Extraé movimientos en USD.",
     "broker": "Informe de cuenta comitente. Extraé operaciones: compras, ventas, dividendos, suscripciones FCI.",
     "crypto": "Extracto de billetera cripto. Extraé movimientos por token con precio en USD.",
     "cash": "Registro de efectivo. Extraé ingresos y egresos declarados manualmente.",
-    "savings_box": "Caja de seguridad. Extraé el saldo declarado.",
+    # "savings_box" es el nombre interno del sistema para 'caja_de_ahorro' del
+    # vocabulario de 00_registro_cuentas.md — NO es una caja de seguridad
+    # física. Es una cuenta bancaria normal con movimientos periódicos.
+    "savings_box": (
+        "Extracto de caja de ahorro (savings_box = caja_de_ahorro) en pesos o "
+        "dólares según corresponda. Extraé movimientos: débitos, créditos, "
+        "transferencias, intereses ganados — igual que una cuenta corriente."
+    ),
 }
 
 

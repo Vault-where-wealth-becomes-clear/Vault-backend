@@ -1,15 +1,19 @@
 import boto3
+from botocore.config import Config
 
 from app.config import settings
 
 
 class S3Client:
     def __init__(self) -> None:
+        s3_config = Config(s3={"addressing_style": "path"}) if settings.aws_endpoint_url else None
         self.client = boto3.client(
             "s3",
             region_name=settings.aws_region,
             aws_access_key_id=settings.aws_access_key_id or None,
             aws_secret_access_key=settings.aws_secret_access_key or None,
+            endpoint_url=settings.aws_endpoint_url or None,
+            config=s3_config,
         )
         self.bucket = settings.s3_bucket_name
 

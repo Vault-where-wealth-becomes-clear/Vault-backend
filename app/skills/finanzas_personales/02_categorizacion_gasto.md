@@ -15,28 +15,44 @@ Agrupar todos los gastos del período en categorías, y clasificar los ingresos 
 | EXTERNO ENTRADA | **Sí (como ingreso)** | Clasificar por recurrencia (ver sección siguiente) |
 | RENDIMIENTO | **No** | Ingreso especial — se reporta por separado en el Tablero |
 
-### Categorías estándar (12)
+### Lista canónica de categorías (fuente única de verdad)
+
+Estas son las únicas categorías válidas para el campo `category` de cada transacción. No inventar variantes, sinónimos ni categorías nuevas.
+
+**Gastos (impactan tasa de ahorro):**
 
 | Categoría | Qué incluye |
 |-----------|-------------|
-| SUPERMERCADO | Alimentos en super/hipermercados, almacenes, verdulerías |
-| RESTAURANTES | Comidas fuera de casa, delivery, cafeterías, bares |
-| TRANSPORTE | Nafta, peajes, estacionamiento, transporte público, remises, Uber |
-| SALUD | Médicos, farmacia, prepagas, obra social, óptica, odontología |
-| INDUMENTARIA | Ropa, calzado, accesorios, bijouterie |
-| TECNOLOGÍA | Equipos, software, suscripciones digitales (Netflix, Spotify, etc.) |
-| ENTRETENIMIENTO | Salidas, cine, teatro, deporte, juegos, cultura |
-| SERVICIOS | Luz, gas, agua, internet, teléfono, alquiler, expensas |
-| EDUCACIÓN | Cursos, libros, capacitación, colegio, universidad |
-| VIAJES | Hoteles, vuelos, turismo, excursiones, alojamiento temporario |
-| INVERSIONES | Depósitos a plazo, aportes a fondos de inversión (excluye compra de divisas — ver CONVERSIÓN PATRIMONIAL) |
-| VARIOS | Todo lo que no encaja en otra categoría |
+| Supermercado | Alimentos en super/hipermercados, almacenes, verdulerías |
+| Restaurantes | Comidas fuera de casa, delivery, cafeterías, bares, gastronomía |
+| Transporte | Nafta, peajes, estacionamiento, transporte público, remises, Uber |
+| Salud | Médicos, farmacia, prepagas, obra social, óptica, odontología |
+| Indumentaria | Ropa, calzado, accesorios, bijouterie |
+| Tecnología | Equipos, software, suscripciones digitales (Netflix, Spotify, etc.) |
+| Entretenimiento | Salidas, cine, teatro, deporte, golf, juegos, cultura |
+| Servicios | Luz, gas, agua, internet, teléfono, alquiler, expensas, cargos financieros |
+| Educación | Cursos, libros, capacitación, colegio, universidad |
+| Viajes | Hoteles, vuelos, turismo, excursiones, alojamiento temporario |
+| Suscripciones | Membresías y suscripciones periódicas no digitales |
+| Impuestos | IIBB, IVA RG, DB.RG, Impuesto PAIS, Percepción AFIP y cualquier cargo de organismos estatales. Nunca en Varios ni Servicios |
+| Varios | Todo gasto que no encaja en otra categoría de gasto |
 
-**Subcategorías especiales (no son categorías de gasto — no afectan la tasa de ahorro):**
+**Ingresos y movimientos (no impactan tasa de ahorro):**
 
-| Subcategoría | Cuándo se usa |
-|-------------|--------------|
-| CONVERSIÓN PATRIMONIAL | Compra de divisas o moneda extranjera sin cuenta de destino declarada en el sistema. Aparece como línea separada en el Tablero — no suma al gasto total ni penaliza la tasa de ahorro operativa. |
+| Categoría | Cuándo se usa |
+|-----------|--------------|
+| Ingreso operativo | Salario, honorarios, cobros recurrentes de actividad principal |
+| Rendimiento | Intereses, dividendos, rendimientos de inversión, cashback |
+| Cambio de moneda | Compra/venta de divisas o moneda extranjera entre cuentas propias o sin cuenta de destino declarada |
+| Pago deuda | Pago de liquidación de tarjeta de crédito, cuota de préstamo, LIQ.DEUDA |
+| Transferencia interna | Movimiento entre cuentas propias del mismo usuario (INTERNO) |
+
+**Transitorio:**
+
+| Categoría | Cuándo se usa |
+|-----------|--------------|
+| Reintegro | Devolución o cashback de un gasto previo — netea en la categoría original |
+| Sin categoría | Solo cuando es imposible determinar la categoría con la información disponible |
 
 Solo agregar categorías nuevas si el usuario lo solicita explícitamente.
 

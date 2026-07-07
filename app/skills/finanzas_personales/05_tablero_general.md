@@ -148,3 +148,16 @@ MES | Valor cartera | Δ cartera | Rend. % | % acc_local | % cedear | % bono | %
 
 ---
 
+### Claves JSON de salida para este módulo
+
+El objeto `tablero_general` DEBE incluir siempre estas claves con estos nombres exactos:
+
+| Clave JSON | Concepto | Valor cuando no disponible |
+|---|---|---|
+| `patrimonio_total_usd` | AL_ref al cierre del período (PL + cartera, en USD) | `0` |
+| `variacion_mensual_pct` | Δ AL % respecto al período anterior | `0` |
+| `activos_liquidos` | `{ "delta_pl": Δ PL, "delta_cartera": Δ cartera }` | `{ "delta_pl": 0, "delta_cartera": 0 }` |
+| `alertas` | lista de strings con emoji + texto | `[]` |
+
+`patrimonio_total_usd` es el campo más crítico: es el único que el sistema usa para mostrar el patrimonio en USD en el dashboard. NUNCA omitirlo ni renombrarlo.
+

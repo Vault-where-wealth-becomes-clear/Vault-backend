@@ -121,12 +121,38 @@ async def get_upload_status(
     return await get_status_payload(db, upload)
 
 
+@router.delete("/{upload_id}", status_code=204)
+async def delete_upload(
+    upload_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    s3: S3Client = Depends(get_s3),
+):
+    upload = await db.scalar(
+        select(Upload).where(Upload.id == upload_id, Upload.user_id == current_user.id)
+    )
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload no encontrado")
+
+    try:
+        await s3.delete_object(upload.s3_key_pdf)
+        if upload.s3_key_json:
+            await s3.delete_object(upload.s3_key_json)
+    except Exception:
+        pass
+
+    await db.delete(upload)
+    await db.flush()
+
+
 @router.get("", response_model=list[UploadRead])
 async def list_uploads(
+    account_id: uuid.UUID | None = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.scalars(
-        select(Upload).where(Upload.user_id == current_user.id).order_by(Upload.uploaded_at.desc())
-    )
+    q = select(Upload).where(Upload.user_id == current_user.id)
+    if account_id:
+        q = q.where(Upload.account_id == account_id)
+    result = await db.scalars(q.order_by(Upload.period_month.desc()))
     return result.all()

@@ -191,5 +191,22 @@ Los consumos de tarjeta pertenecen al **mes de la compra**, no al mes del pago.
 - En el mes de la **compra**: el gasto se registra en el Historial de Gastos y en la hoja Compromisos Futuros como EXTERNO SALIDA, categorizado normalmente. No impacta en el libro diario de la cuenta bancaria ese mes.
 - En el mes del **débito bancario**: el pago de la liquidación entra en el libro diario de la cuenta bancaria como LIQ.DEUDA. No se categoriza como gasto (ya fue categorizado antes).
 
+### Reglas de procesamiento para resúmenes de tarjeta de crédito
+
+**EXCLUIR siempre del array `transacciones`:**
+- Líneas que describan el pago del saldo de la tarjeta: "SU PAGO EN PESOS", "SU PAGO EN DOLARES", "SU PAGO EN USD", "SU PAGO ANTERIOR", "PAGO MINIMO ANTERIOR" y variantes. Estas ya figuran en el extracto bancario como débito; incluirlas duplicaría el egreso.
+- Regla general: cualquier ítem cuya descripción identifique el pago total o parcial del saldo del período anterior.
+
+**INCLUIR como consumos reales — categorizar según el árbol estándar:**
+- Todos los gastos con comercios, tiendas, servicios y proveedores externos.
+- Cargos financieros (intereses, financiación, CFT) → categoría: **Servicios**.
+
+**INCLUIR — categoría obligatoria "Impuestos":**
+- Ingresos Brutos (IIBB / Ing. Brutos), IVA RG, DB.RG (Débito Reglamentario General), CR.RG (Crédito Reglamentario General), Impuesto PAIS, Impuesto para una Argentina Inclusiva y Solidaria (PAIS), Percepción AFIP, Percepción IIBB y cualquier otro cargo o crédito emitido por organismos estatales o recaudatorios. Estos nunca van a VARIOS ni a Servicios.
+
+**Regla crítica de signo para líneas de crédito fiscal (CR.*):**
+- Líneas que comienzan con "CR." (ej. "CR.RG", "CR.IVA") son *créditos* del banco al cliente — el banco devuelve o acredita ese monto. El `amount` debe ser **POSITIVO** (dinero que ingresa). Ejemplo: `CR.RG 5617 30% M` → `"amount": 9244.40, "currency": "ARS"`.
+- Líneas que comienzan con "DB." (ej. "DB.RG") son *débitos* fiscales — el banco cobra ese monto. El `amount` debe ser **NEGATIVO**. Ejemplo: `DB.RG 5617 30%` → `"amount": -395045.45, "currency": "ARS"`.
+
 ---
 

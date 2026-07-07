@@ -68,12 +68,15 @@ async def create_manual_transaction(
 async def list_transactions(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    upload_id: uuid.UUID | None = None,
     account_id: uuid.UUID | None = None,
     category: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
 ):
     query = select(Transaction).where(Transaction.user_id == current_user.id)
+    if upload_id:
+        query = query.where(Transaction.upload_id == upload_id)
     if account_id:
         query = query.where(Transaction.account_id == account_id)
     if category:
@@ -83,7 +86,7 @@ async def list_transactions(
     if date_to:
         query = query.where(Transaction.date <= date_to)
 
-    result = await db.scalars(query.order_by(Transaction.date.desc()))
+    result = await db.scalars(query.order_by(Transaction.date.desc(), Transaction.sort_order.asc()))
     return result.all()
 
 
