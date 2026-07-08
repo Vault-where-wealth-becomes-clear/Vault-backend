@@ -49,3 +49,17 @@ class SkillModule(str, enum.Enum):
     tablero_general = "tablero_general"
     proyeccion_patrimonial = "proyeccion_patrimonial"
     compromisos_futuros = "compromisos_futuros"
+
+
+class InstrumentoTipo(str, enum.Enum):
+    accion_local = "accion_local"
+    cedear = "cedear"
+    bono_ars = "bono_ars"
+    bono_usd = "bono_usd"
+    fci_ars = "fci_ars"
+    fci_usd = "fci_usd"
+    lecap_boncap = "lecap_boncap"
+    on_ars = "on_ars"
+    on_usd = "on_usd"
+    efectivo_comitente = "efectivo_comitente"
+    otro = "otro"

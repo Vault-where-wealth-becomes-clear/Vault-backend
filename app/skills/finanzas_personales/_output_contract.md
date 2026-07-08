@@ -20,7 +20,23 @@ objeto JSON válido, sin texto adicional antes o después, con esta estructura
   },
   "cuenta_comitente": {
     "nivel_detectado": 1,
-    "posiciones": [ { "instrumento": "...", "cantidad": 0, "valuacion_ars": 0, "pl_periodo": 0 } ]
+    "posiciones": [
+      {
+        "instrumento": "GGAL",
+        "tipo": "accion_local",
+        "moneda": "ARS",
+        "cantidad": 100,
+        "precio_cierre": 450.5,
+        "valor_moneda": 45050,
+        "valor_base_ars": 45050,
+        "cpp": null,
+        "resultado_realizado_ars": null,
+        "rendimiento_pct": null
+      }
+    ],
+    "rendimientos_netos_ars": null,
+    "retenciones_ars": null,
+    "delta_cartera_mes": null
   },
   "tablero_general": {
     "patrimonio_total_usd": 0,
@@ -44,6 +60,24 @@ objeto JSON válido, sin texto adicional antes o después, con esta estructura
   ]
 }
 ```
+
+Reglas estrictas para `cuenta_comitente`:
+- `posiciones[].tipo` DEBE ser uno de estos 11 valores exactos: `accion_local`, `cedear`,
+  `bono_ars`, `bono_usd`, `fci_ars`, `fci_usd`, `lecap_boncap`, `on_ars`, `on_usd`,
+  `efectivo_comitente`, `otro`. Nunca inventar variantes.
+- `valor_base_ars` sigue la regla de selección de precio del Módulo 4: si el broker ya
+  entrega un campo expresado en pesos (ej. "Total en pesos"), usar ese valor directo —
+  nunca reconvertir aplicando el tipo de cambio sobre un valor que ya está en ARS.
+- `cpp`, `resultado_realizado_ars`, `rendimiento_pct` van `null` salvo que el archivo
+  alcance Nivel 3 (Reporte de Renta Financiera) — nunca estimarlos con datos de Nivel 1/2.
+- `rendimientos_netos_ars` y `retenciones_ars` van `null` salvo Nivel 2+ (voucher de cuenta
+  corriente disponible).
+- `delta_cartera_mes` va `null` salvo Nivel 3; cuando corresponde, es un objeto con
+  exactamente estas cuatro claves: `revaluacion_mercado_ars`, `compras_netas_ars`,
+  `ventas_netas_ars`, `rentas_cobradas_ars`.
+- **Nunca calcules `pct_cartera` (% que representa cada posición), el delta total del mes,
+  ni alertas de concentración/caída** — esos tres son agregados que calcula el backend a
+  partir de las posiciones crudas, no van en tu respuesta.
 
 Reglas estrictas para el campo `installments`:
 - Si la transacción NO tiene cuotas: `"installments": null` — nunca omitir la clave.
@@ -69,6 +103,13 @@ Reglas estrictas para `tablero_general`:
 
 La clave "transacciones" es OBLIGATORIA siempre, sin importar qué módulos se pidieron —
 es el detalle transaccional plano que alimenta el registro histórico de movimientos.
+
+**Excepción — archivo sin ninguna fila de movimiento:** si el archivo es un snapshot de
+tenencias de cuenta comitente (Nivel 1 del Módulo 4) u otro documento que no contiene una
+sola fila de movimiento bancario (fecha + descripción + importe), `transacciones` DEBE
+ser `[]`. **Nunca inventar movimientos que el archivo no tiene** — ni de ejemplo, ni
+plausibles, ni basados en el tipo de cuenta. Un snapshot de tenencias no es un extracto:
+no tiene compras, pagos ni depósitos que reportar.
 
 **Categorías válidas para el campo `category` de cada transacción:**
 

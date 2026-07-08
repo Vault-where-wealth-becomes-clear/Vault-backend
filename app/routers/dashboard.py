@@ -187,21 +187,13 @@ async def get_full_dashboard(
         # por modulo cuando estas claves vienen en null.
         return FullDashboardResponse(period=period_month, insights=[])
 
-    previous_snapshot = await db.scalar(
-        select(FinancialSnapshot).where(
-            FinancialSnapshot.user_id == current_user.id,
-            FinancialSnapshot.period_month == _previous_month(period_month),
-        )
-    )
-
     return FullDashboardResponse(
         period=period_month,
         flujo_mensual=snapshot.flujo_mensual,
         categorizacion=snapshot.categorizacion,
         flujo_periodo=snapshot.flujo_periodo,
-        cartera=snapshot.cartera,
         tablero_general=snapshot.tablero_general,
         proyeccion=snapshot.proyeccion,
         compromisos=snapshot.compromisos,
-        insights=generate_snapshot_insights(snapshot, previous_snapshot),
+        insights=generate_snapshot_insights(snapshot),
     )

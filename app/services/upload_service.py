@@ -53,7 +53,11 @@ async def resolve_modules_for_upload(
         )
     )
     user_history = (
-        {field: getattr(snapshot, field) for field in MODULE_SNAPSHOT_FIELD.values()}
+        {
+            field: getattr(snapshot, field)
+            for field in MODULE_SNAPSHOT_FIELD.values()
+            if field != "cartera"
+        }
         if snapshot
         else None
     )

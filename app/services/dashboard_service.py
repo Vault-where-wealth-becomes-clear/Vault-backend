@@ -6,6 +6,7 @@ from sqlalchemy import case, extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.cartera_snapshot import CarteraSnapshot
 from app.models.enums import AccountType, CurrencyType
 from app.models.exchange_rate import ExchangeRate
 from app.models.financial_snapshot import FinancialSnapshot
@@ -20,6 +21,11 @@ class MonthSummary:
 
 
 _CREDIT_CARD_TYPES = [AccountType.credit_card_ars, AccountType.credit_card_usd]
+
+# Cuenta comitente tiene su propio concepto de resultado (rendimientos, resultado
+# realizado, Δ de valuación) — nunca debe mezclarse con gasto/ingreso/flujo bancario,
+# ni siquiera si alguna vez queda una transacción mal asociada a esa cuenta.
+_EXCLUDED_FROM_CASH_FLOW = [*_CREDIT_CARD_TYPES, AccountType.broker]
 
 
 def _prev_month(period_month: date) -> date:
@@ -66,16 +72,19 @@ async def get_patrimonio_actual(db: AsyncSession, user_id, period_month: date) -
 
 
 async def get_month_summary(db: AsyncSession, user_id, period_month: date) -> MonthSummary:
-    # Spending by category — all accounts (incl. credit cards, they represent real expenses)
+    # Spending by category — all accounts incl. credit cards (real expenses); excluye
+    # solo broker (cartera tiene su propio concepto de resultado, nunca gasto/ingreso).
     rows = await db.execute(
         select(
             Transaction.category,
             func.sum(Transaction.amount_ars).label("total_ars"),
         )
+        .join(Account, Transaction.account_id == Account.id)
         .where(
             Transaction.user_id == user_id,
             extract("year", Transaction.date) == period_month.year,
             extract("month", Transaction.date) == period_month.month,
+            Account.account_type != AccountType.broker,
         )
         .group_by(Transaction.category)
     )
@@ -94,7 +103,8 @@ async def get_month_summary(db: AsyncSession, user_id, period_month: date) -> Mo
 
     savings = income_ars + expense_ars  # expense_ars ya es negativo
 
-    # Patrimony in USD — exclude credit cards (they are liabilities, not assets)
+    # Patrimony in USD — exclude credit cards (liabilities, not assets) and broker
+    # (cartera no aporta acá, tiene su propio valor de cartera_usd separado).
     usd_row = await db.execute(
         select(func.sum(Transaction.amount_usd))
         .join(Account, Transaction.account_id == Account.id)
@@ -102,7 +112,7 @@ async def get_month_summary(db: AsyncSession, user_id, period_month: date) -> Mo
             Transaction.user_id == user_id,
             extract("year", Transaction.date) == period_month.year,
             extract("month", Transaction.date) == period_month.month,
-            Account.account_type.not_in(_CREDIT_CARD_TYPES),
+            Account.account_type.not_in(_EXCLUDED_FROM_CASH_FLOW),
         )
     )
     total_usd = usd_row.scalar() or Decimal("0")
@@ -125,7 +135,9 @@ async def get_month_summary(db: AsyncSession, user_id, period_month: date) -> Mo
 async def get_flujo_del_mes(
     db: AsyncSession, user_id, period_month: date
 ) -> dict[str, Decimal]:
-    """Sum ingresos/egresos from non-CC account transactions for the period."""
+    """Sum ingresos/egresos from non-CC, non-broker account transactions for the period —
+    cartera tiene su propio resultado (ver MonthlyCarteraFlujoLine en el frontend), no se
+    mezcla con el flujo de cuentas bancarias."""
     row = (
         await db.execute(
             select(
@@ -151,7 +163,7 @@ async def get_flujo_del_mes(
                 Transaction.user_id == user_id,
                 extract("year", Transaction.date) == period_month.year,
                 extract("month", Transaction.date) == period_month.month,
-                Account.account_type.not_in(_CREDIT_CARD_TYPES),
+                Account.account_type.not_in(_EXCLUDED_FROM_CASH_FLOW),
             )
         )
     ).one()
@@ -196,23 +208,27 @@ async def _get_patrimonio_for_series(db: AsyncSession, user_id, month: date, anc
 
 
 async def _get_cartera_usd_for_month(db: AsyncSession, user_id, month: date, mep: Decimal | None) -> float | None:
-    """Valuación de cartera (cuenta comitente) del mes, convertida a USD con el MEP del período."""
+    """
+    Valuación de cartera del mes, convertida a USD con el MEP del período — sumada
+    across TODAS las cuentas comitente del usuario (cada una guarda su propia cartera
+    en cartera_snapshots, ver CarteraSnapshot; acá se agrega para el gráfico general).
+    """
     if mep is None:
         return None
-    snap = await db.scalar(
-        select(FinancialSnapshot)
+    snapshots = await db.scalars(
+        select(CarteraSnapshot)
+        .join(Account, Account.id == CarteraSnapshot.account_id)
         .where(
-            FinancialSnapshot.user_id == user_id,
-            FinancialSnapshot.period_month == month,
-            FinancialSnapshot.cartera.isnot(None),
+            Account.user_id == user_id,
+            Account.account_type == AccountType.broker,
+            CarteraSnapshot.period_month == month,
         )
-        .order_by(FinancialSnapshot.period_month.desc())
-        .limit(1)
     )
-    if not snap or not snap.cartera:
-        return None
-    posiciones = snap.cartera.get("posiciones", [])
-    total_ars = sum(Decimal(str(p.get("valuacion_ars", 0) or 0)) for p in posiciones)
+    total_ars = Decimal("0")
+    for snap in snapshots:
+        total_ars += sum(
+            Decimal(str(p.get("valor_base_ars", 0) or 0)) for p in (snap.posiciones or [])
+        )
     return float(total_ars / mep) if total_ars else None
 
 
@@ -302,10 +318,7 @@ def generate_insights(
     return insights
 
 
-def generate_snapshot_insights(
-    snapshot: FinancialSnapshot | None,
-    previous_snapshot: FinancialSnapshot | None,
-) -> list[str]:
+def generate_snapshot_insights(snapshot: FinancialSnapshot | None) -> list[str]:
     """
     Templates en texto sobre los módulos de la skill, SIN llamar a Claude.
     Solo agrega insights para los módulos que efectivamente se hayan calculado.
@@ -313,9 +326,6 @@ def generate_snapshot_insights(
     insights: list[str] = []
     if snapshot is None:
         return insights
-
-    if snapshot.cartera:
-        insights += _cartera_insights(snapshot.cartera)
 
     if snapshot.proyeccion:
         insights += _proyeccion_insights(snapshot.proyeccion)
@@ -327,16 +337,68 @@ def generate_snapshot_insights(
 
 
 def _cartera_insights(cartera: dict) -> list[str]:
+    """
+    Nivel 3: resultado realizado por ventas/vencimientos. Nivel 2: rendimientos netos
+    cobrados (dividendos/intereses). Ninguno de los dos existe en Nivel 1 — quedan
+    ausentes (no en 0) si el mes no alcanzó ese nivel, siguiendo el principio central
+    del Módulo 4 (ver 04_cuenta_comitente.md).
+    """
     insights = []
     posiciones = cartera.get("posiciones", [])
-    total_pl = sum(p.get("pl_periodo", 0) for p in posiciones)
-    if total_pl > 0:
-        insights.append(f"Tu cartera tuvo un resultado positivo de ${total_pl:,.0f} en el período")
-    elif total_pl < 0:
+
+    resultado_realizado = sum(
+        Decimal(str(p.get("resultado_realizado_ars", 0) or 0)) for p in posiciones
+    )
+    if resultado_realizado > 0:
+        insights.append(f"Resultado realizado en tu cartera: +${resultado_realizado:,.0f} en el período")
+    elif resultado_realizado < 0:
+        insights.append(f"Resultado realizado en tu cartera: -${abs(resultado_realizado):,.0f} en el período")
+
+    rendimientos_netos = cartera.get("rendimientos_netos_ars")
+    if rendimientos_netos:
         insights.append(
-            f"Tu cartera tuvo un resultado negativo de ${abs(total_pl):,.0f} en el período"
+            f"Cobraste ${Decimal(str(rendimientos_netos)):,.0f} en rendimientos netos de tu cartera este período"
         )
+
     return insights
+
+
+def _cartera_alerts(cartera: dict, previous_cartera: dict | None) -> list[str]:
+    """
+    Alertas de concentración y caída de cartera, calculadas de forma determinística sobre
+    pct_cartera/valor_base_ars ya guardados — nunca redactadas por el LLM (ver reglas en
+    _output_contract.md). "Sin movimientos 3 meses" y "doble representación FCI/billetera"
+    quedan fuera de esta fase: requieren cruzar 3+ meses de historial y otras cuentas del
+    usuario respectivamente — se abordan junto con la página Cartera.
+    """
+    alerts: list[str] = []
+    posiciones = cartera.get("posiciones", [])
+
+    for pos in posiciones:
+        pct = pos.get("pct_cartera") or 0
+        if pct > 0.40:
+            alerts.append(
+                f"🟡 CONCENTRACIÓN: {pos.get('instrumento', '?')} = {pct * 100:.0f}% de la cartera"
+            )
+
+    if previous_cartera:
+        total = sum(Decimal(str(p.get("valor_base_ars", 0) or 0)) for p in posiciones)
+        prev_posiciones = previous_cartera.get("posiciones", [])
+        prev_total = sum(Decimal(str(p.get("valor_base_ars", 0) or 0)) for p in prev_posiciones)
+        if prev_total > 0:
+            delta_pct = (total - prev_total) / prev_total
+            if delta_pct <= Decimal("-0.20"):
+                alerts.append(
+                    f"🔴 CAÍDA SEVERA: la cartera perdió {abs(delta_pct) * 100:.0f}% "
+                    f"(${abs(total - prev_total):,.0f}) en el mes"
+                )
+            elif delta_pct <= Decimal("-0.10"):
+                alerts.append(
+                    f"🔴 CAÍDA DE CARTERA: la cartera perdió {abs(delta_pct) * 100:.0f}% "
+                    f"(${abs(total - prev_total):,.0f}) en el mes"
+                )
+
+    return alerts
 
 
 def _proyeccion_insights(proyeccion: dict) -> list[str]:
@@ -355,3 +417,80 @@ def _translate_alert(alert) -> str:
         mensaje = alert.get("mensaje") or alert.get("message") or alert.get("texto") or ""
         return f"{tipo} {mensaje}".strip() if tipo else mensaje
     return str(alert)
+
+
+def _cartera_total_ars(posiciones: list[dict] | None) -> Decimal:
+    return sum(Decimal(str(p.get("valor_base_ars", 0) or 0)) for p in (posiciones or []))
+
+
+def _cartera_composicion_por_tipo(posiciones: list[dict] | None) -> dict[str, float]:
+    total = _cartera_total_ars(posiciones)
+    composicion: dict[str, float] = {}
+    if not total:
+        return composicion
+    for pos in posiciones or []:
+        tipo = pos.get("tipo", "otro")
+        valor = Decimal(str(pos.get("valor_base_ars", 0) or 0))
+        composicion[tipo] = composicion.get(tipo, 0.0) + float(valor / total)
+    return composicion
+
+
+async def get_account_cartera(
+    db: AsyncSession, account_id, months: int = 6, period: date | None = None
+) -> dict | None:
+    """
+    Historia de cartera de UNA cuenta comitente puntual (nunca agregada con otras
+    cuentas — cada una tiene su propia tabla de posiciones y evolución). Devuelve None
+    si todavía no se procesó ningún archivo para esta cuenta (hasta `period`, si se pasa).
+
+    `period`, si se pasa, ancla la ventana a meses <= period (para "qué se sabía en
+    Mes a mes al mirar ese mes puntual" o para navegar la página Cartera a un mes
+    específico) — sin él, ancla al mes más reciente real.
+    """
+    query = select(CarteraSnapshot).where(CarteraSnapshot.account_id == account_id)
+    if period is not None:
+        query = query.where(CarteraSnapshot.period_month <= period)
+    snapshots = list(
+        await db.scalars(query.order_by(CarteraSnapshot.period_month.desc()).limit(months))
+    )
+    if not snapshots:
+        return None
+    snapshots.reverse()  # oldest -> newest, para poder calcular Δ contra el mes anterior
+
+    evolucion = []
+    prev_total: Decimal | None = None
+    for snap in snapshots:
+        total = _cartera_total_ars(snap.posiciones)
+        delta_ars = float(total - prev_total) if prev_total is not None else None
+        delta_pct = float((total - prev_total) / prev_total) if prev_total else None
+        evolucion.append(
+            {
+                "month": snap.period_month.strftime("%Y-%m"),
+                "nivel_detectado": snap.nivel_detectado,
+                "valor_base_ars": float(total),
+                "delta_ars": delta_ars,
+                "delta_pct": delta_pct,
+                "composicion_por_tipo": _cartera_composicion_por_tipo(snap.posiciones),
+            }
+        )
+        prev_total = total
+
+    latest = snapshots[-1]
+    latest_cartera = {
+        "posiciones": latest.posiciones,
+        "rendimientos_netos_ars": latest.rendimientos_netos_ars,
+    }
+    previous_cartera = {"posiciones": snapshots[-2].posiciones} if len(snapshots) >= 2 else None
+
+    return {
+        "month": latest.period_month.strftime("%Y-%m"),
+        "nivel_detectado": latest.nivel_detectado,
+        "posiciones": latest.posiciones,
+        "rendimientos_netos_ars": latest.rendimientos_netos_ars,
+        "retenciones_ars": latest.retenciones_ars,
+        "delta_cartera_mes": latest.delta_cartera_mes,
+        "evolucion": evolucion,
+        "composicion_por_tipo": evolucion[-1]["composicion_por_tipo"],
+        "alertas": _cartera_alerts(latest_cartera, previous_cartera),
+        "insights": _cartera_insights(latest_cartera),
+    }

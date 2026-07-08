@@ -1,6 +1,7 @@
 import uuid
+from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,8 +9,11 @@ from app.database import get_db
 from app.middleware.auth import get_current_user
 from app.middleware.plans import PLAN_FEATURES
 from app.models.account import Account
+from app.models.enums import AccountType
 from app.models.user import User
 from app.schemas.account import AccountCreate, AccountRead, AccountUpdate
+from app.schemas.cartera import AccountCarteraResponse
+from app.services.dashboard_service import get_account_cartera
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
@@ -77,6 +81,21 @@ async def delete_account(
     account = await _get_owned_account(db, account_id, current_user.id)
     account.is_active = False
     await db.flush()
+
+
+@router.get("/{account_id}/cartera", response_model=AccountCarteraResponse | None)
+async def get_account_cartera_endpoint(
+    account_id: uuid.UUID,
+    months: int = Query(default=6, ge=1, le=24),
+    period: str | None = Query(default=None, description="YYYY-MM — ancla la ventana a ese mes o antes"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    account = await _get_owned_account(db, account_id, current_user.id)
+    if account.account_type != AccountType.broker:
+        raise HTTPException(status_code=400, detail="La cuenta no es una cuenta comitente")
+    period_month = date.fromisoformat(f"{period}-01") if period else None
+    return await get_account_cartera(db, account_id, months=months, period=period_month)
 
 
 async def _get_owned_account(

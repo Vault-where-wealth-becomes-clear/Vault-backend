@@ -61,7 +61,6 @@ class FullDashboardResponse(BaseModel):
     flujo_mensual: dict[str, Any] | None = None
     categorizacion: dict[str, Any] | None = None
     flujo_periodo: dict[str, Any] | None = None
-    cartera: dict[str, Any] | None = None
     tablero_general: dict[str, Any] | None = None
     proyeccion: dict[str, Any] | None = None
     compromisos: dict[str, Any] | None = None

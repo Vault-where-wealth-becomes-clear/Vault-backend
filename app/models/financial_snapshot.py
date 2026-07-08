@@ -24,7 +24,6 @@ class FinancialSnapshot(Base):
     flujo_mensual: Mapped[dict | None] = mapped_column(JSONB)
     categorizacion: Mapped[dict | None] = mapped_column(JSONB)
     flujo_periodo: Mapped[dict | None] = mapped_column(JSONB)
-    cartera: Mapped[dict | None] = mapped_column(JSONB)
     tablero_general: Mapped[dict | None] = mapped_column(JSONB)
     proyeccion: Mapped[dict | None] = mapped_column(JSONB)
     compromisos: Mapped[dict | None] = mapped_column(JSONB)

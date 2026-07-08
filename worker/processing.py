@@ -8,8 +8,9 @@ from app.aws.s3 import S3Client
 from app.config import settings
 from app.database import AsyncSessionLocal
 from app.models.account import Account
+from app.models.cartera_snapshot import CarteraSnapshot
 from app.models.category_rule import CategoryRule
-from app.models.enums import CurrencyType, SkillModule, UploadStatus
+from app.models.enums import CurrencyType, InstrumentoTipo, SkillModule, UploadStatus
 from app.models.exchange_rate import ExchangeRate
 from app.models.financial_snapshot import FinancialSnapshot
 from app.models.installment import Installment
@@ -62,7 +63,9 @@ async def process_upload(message: dict) -> None:
             detected_bank = detect_bank(extracted_text)
 
             category_rules = await _get_category_rules(db, user_id)
-            user_history = await _get_financial_snapshot(db, user_id, hint_period)
+            user_history = await _get_financial_snapshot(
+                db, user_id, hint_period, account_id=upload.account_id
+            )
             resolved_modules = resolve_required_modules(requested_modules, user_history)
 
             system_prompt = build_skill_system_prompt(resolved_modules)
@@ -285,6 +288,13 @@ async def process_upload(message: dict) -> None:
 
             # Snapshot and balances: last detected period wins
             last_period = date.fromisoformat(months[-1] + "-01")
+
+            if result.get("cuenta_comitente"):
+                result["cuenta_comitente"] = _normalize_cartera(result["cuenta_comitente"])
+                await _upsert_cartera_snapshot(
+                    db, upload.account_id, last_period, result["cuenta_comitente"]
+                )
+
             await _upsert_financial_snapshot(db, user_id, last_period, result)
             await _update_account_balances(db, upload, result)
             await _save_module_request_results(db, upload.id, resolved_modules, result)
@@ -363,15 +373,44 @@ async def _get_mep_rate(db, period_month: date) -> Decimal | None:
     return rate.mep_rate if rate else None
 
 
-async def _get_financial_snapshot(db, user_id: uuid.UUID, period_month: date) -> dict | None:
+async def _get_financial_snapshot(
+    db, user_id: uuid.UUID, period_month: date, account_id: uuid.UUID | None = None
+) -> dict | None:
     snapshot = await db.scalar(
         select(FinancialSnapshot).where(
             FinancialSnapshot.user_id == user_id, FinancialSnapshot.period_month == period_month
         )
     )
-    if snapshot is None:
-        return None
-    return {field: getattr(snapshot, field) for field in MODULE_SNAPSHOT_FIELD.values()}
+    history = (
+        {
+            field: getattr(snapshot, field)
+            for field in MODULE_SNAPSHOT_FIELD.values()
+            if field != "cartera"
+        }
+        if snapshot is not None
+        else {}
+    )
+
+    # cartera vive en su propia tabla, scoped por cuenta (una cuenta comitente no debe
+    # pisar la de otra en el mismo mes) — se inyecta acá bajo la misma clave "cartera"
+    # para que _build_user_message siga funcionando sin cambios en su lógica genérica.
+    if account_id is not None:
+        cartera_snap = await db.scalar(
+            select(CarteraSnapshot).where(
+                CarteraSnapshot.account_id == account_id,
+                CarteraSnapshot.period_month == period_month,
+            )
+        )
+        if cartera_snap is not None:
+            history["cartera"] = {
+                "nivel_detectado": cartera_snap.nivel_detectado,
+                "posiciones": cartera_snap.posiciones,
+                "rendimientos_netos_ars": cartera_snap.rendimientos_netos_ars,
+                "retenciones_ars": cartera_snap.retenciones_ars,
+                "delta_cartera_mes": cartera_snap.delta_cartera_mes,
+            }
+
+    return history or None
 
 
 async def _upsert_financial_snapshot(
@@ -390,7 +429,6 @@ async def _upsert_financial_snapshot(
         SkillModule.flujo_mensual.value: "flujo_mensual",
         SkillModule.categorizacion_gasto.value: "categorizacion",
         SkillModule.flujo_periodo.value: "flujo_periodo",
-        SkillModule.cuenta_comitente.value: "cartera",
         SkillModule.tablero_general.value: "tablero_general",
         SkillModule.proyeccion_patrimonial.value: "proyeccion",
         SkillModule.compromisos_futuros.value: "compromisos",
@@ -399,6 +437,27 @@ async def _upsert_financial_snapshot(
         if module_key in result:
             setattr(snapshot, snapshot_field, result[module_key])
 
+    snapshot.updated_at = datetime.utcnow()
+    await db.flush()
+
+
+async def _upsert_cartera_snapshot(
+    db, account_id: uuid.UUID, period_month: date, cartera: dict
+) -> None:
+    snapshot = await db.scalar(
+        select(CarteraSnapshot).where(
+            CarteraSnapshot.account_id == account_id, CarteraSnapshot.period_month == period_month
+        )
+    )
+    if snapshot is None:
+        snapshot = CarteraSnapshot(account_id=account_id, period_month=period_month)
+        db.add(snapshot)
+
+    snapshot.nivel_detectado = cartera.get("nivel_detectado", 1)
+    snapshot.posiciones = cartera.get("posiciones", [])
+    snapshot.rendimientos_netos_ars = cartera.get("rendimientos_netos_ars")
+    snapshot.retenciones_ars = cartera.get("retenciones_ars")
+    snapshot.delta_cartera_mes = cartera.get("delta_cartera_mes")
     snapshot.updated_at = datetime.utcnow()
     await db.flush()
 
@@ -512,6 +571,26 @@ _CC_PAYMENT_PATTERNS = (
 def _is_cc_payment(description: str) -> bool:
     upper = description.upper()
     return upper.startswith("SU PAGO") or any(p in upper for p in _CC_PAYMENT_PATTERNS)
+
+
+def _normalize_cartera(cartera: dict) -> dict:
+    """
+    Agregados derivados de cuenta_comitente que nunca se confían al LLM (ver reglas en
+    _output_contract.md): tipo de instrumento coercionado a un valor válido, y % cartera
+    calculado desde valor_base_ars de todas las posiciones.
+    """
+    tipos_validos = {t.value for t in InstrumentoTipo}
+    posiciones = cartera.get("posiciones") or []
+    for pos in posiciones:
+        if pos.get("tipo") not in tipos_validos:
+            pos["tipo"] = InstrumentoTipo.otro.value
+
+    total = sum(Decimal(str(p.get("valor_base_ars", 0) or 0)) for p in posiciones)
+    for pos in posiciones:
+        valor = Decimal(str(pos.get("valor_base_ars", 0) or 0))
+        pos["pct_cartera"] = float(valor / total) if total else 0.0
+
+    return cartera
 
 
 def _apply_fiscal_rules(transactions: list[dict]) -> list[dict]:

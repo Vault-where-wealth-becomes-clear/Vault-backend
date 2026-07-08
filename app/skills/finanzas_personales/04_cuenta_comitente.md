@@ -16,8 +16,12 @@ Si el usuario sube archivos adicionales para un mes ya procesado, la skill recal
 CUENTA COMITENTE
   nombre:              [etiqueta libre — ej. "IOL", "Bull Market", "Balanz"]
   broker:              [entidad — ej. "Invertir Online", "Bull Market Brokers"]
-  moneda base:         ARS | USD
 ```
+
+> La cuenta comitente no declara una "moneda base" propia al crearse — la base de
+> reporte de todo el Módulo 4 es siempre ARS (`valor_base_ars`), igual que el resto de la
+> app. Cada posición individual sí declara su propia `moneda` (ARS o USD según el
+> instrumento), pero el valor consolidado de la cartera siempre se expresa en ARS.
 
 ---
 
@@ -74,6 +78,22 @@ No se asume el nivel sin confirmación cuando hay ambigüedad estructural.
 INSTRUMENTO | TIPO | MONEDA | CANTIDAD | PRECIO CIERRE | VALOR (moneda) | VALOR (base) | % CARTERA
 ```
 > Aunque el archivo del broker incluya columnas como "Costo (PPC)" o "Resultado", la skill las ignora completamente en Nivel 1. No se muestran con advertencia ni atenuadas — no aparecen.
+
+**Mapeo columna → clave JSON (`cuenta_comitente.posiciones[]`, ver `_output_contract.md`):**
+
+| Columna conceptual | Clave JSON | Quién la completa |
+|---|---|---|
+| INSTRUMENTO | `instrumento` | skill (todos los niveles) |
+| TIPO | `tipo` | skill (todos los niveles) |
+| MONEDA | `moneda` | skill (todos los niveles) |
+| CANTIDAD | `cantidad` | skill (todos los niveles) |
+| PRECIO CIERRE | `precio_cierre` | skill (todos los niveles) |
+| VALOR (moneda) | `valor_moneda` | skill (todos los niveles) |
+| VALOR (base) | `valor_base_ars` | skill (todos los niveles) |
+| % CARTERA | `pct_cartera` | **backend** — nunca la calcula la skill |
+| CPP | `cpp` | skill, solo Nivel 3 |
+| RESULTADO $ | `resultado_realizado_ars` | skill, solo Nivel 3 |
+| REND. % | `rendimiento_pct` | skill, solo Nivel 3 |
 
 **Regla de selección de precio cuando el broker entrega múltiples monedas:**
 
@@ -141,6 +161,26 @@ precio_cierre: 1
 ```
 Suma a `Valor_cartera_base` igual que cualquier otra posición.
 
+**Regla — voucher con secciones "Disponible" y "No disponible":**
+
+Algunos brokers (ej. INVIU) segmentan el voucher de cuenta corriente en dos bloques por
+moneda: "Disponible - Cartera monetaria" y "No disponible - Cartera monetaria" (esta
+última es plata colocada en cauciones/repos de corto plazo — se corresponde con los
+boletos de apertura/cierre de colocación y con la hoja "Resultado cauciones" del Reporte
+de Renta Financiera en Nivel 3). Cada bloque tiene su propio "Saldo al [fecha]".
+
+`efectivo_comitente` de una moneda dada es la **suma** del saldo "Disponible" más el
+saldo "No disponible" de esa misma moneda — nunca solo el bloque "Disponible". Omitir el
+bloque "No disponible" subvalúa la cartera: es plata real del comitente, temporalmente
+inmovilizada en una colocación, no dinero que salió de la cuenta.
+
+> Ejemplo: voucher con "Disponible / Dólar MEP: Saldo al 30/04 → U$S 159,06" y
+> "No disponible / Dólar MEP: Saldo al 30/04 → U$S 1.019,00" → la posición
+> `efectivo_comitente` en USD usa `cantidad: 1.178,06` (159,06 + 1.019,00), no 159,06.
+> Si el snapshot de tenencias (Nivel 1) tampoco incluye el monto "no disponible" en su
+> total — como ocurre típicamente — esta suma es la única forma de que ese dinero quede
+> reflejado en `Valor_cartera_base`.
+
 **Tratamiento de retenciones impositivas sobre rentas:**
 
 Cuando el voucher muestra un dividendo/renta seguido de su retención asociada (mismo instrumento, fecha cercana, signo opuesto):
@@ -176,7 +216,7 @@ Las retenciones **no se categorizan como gasto del Módulo 2** — no compiten c
 ```
 INSTRUMENTO | TIPO | MONEDA | CANTIDAD | PRECIO CIERRE | VALOR (moneda) | VALOR (base) | CPP | RESULTADO $ | REND. % | % CARTERA
 ```
-> Las columnas CPP, RESULTADO $ y REND. % se habilitan únicamente en Nivel 3, calculadas desde datos verificables del Reporte de Renta Financiera.
+> Las columnas CPP, RESULTADO $ y REND. % se habilitan únicamente en Nivel 3, calculadas desde datos verificables del Reporte de Renta Financiera. Ver tabla de mapeo columna→clave JSON más arriba (Nivel 1) — aplica igual acá.
 
 **CPP dinámico ante nueva compra:**
 ```
@@ -290,6 +330,10 @@ Esta regla aplica de forma independiente por mes, en línea con el principio cen
 ---
 
 ### Alertas de la cartera
+
+> Esta tabla describe el criterio, pero las alertas de concentración y caída de cartera
+> las calcula el **backend** a partir de `pct_cartera` y `valor_base_ars` ya guardados —
+> la skill no redacta estos strings de alerta como parte de `cuenta_comitente`.
 
 | Condición | Nivel | Alerta |
 |-----------|-------|--------|
