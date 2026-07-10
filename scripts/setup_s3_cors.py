@@ -1,6 +1,7 @@
 """Configure CORS on the S3 bucket to allow browser uploads from localhost and production."""
 
 import sys
+
 import boto3
 from botocore.exceptions import ClientError
 

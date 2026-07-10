@@ -56,8 +56,7 @@ async def get_patrimonio_actual(db: AsyncSession, user_id, period_month: date) -
         return Decimal("0")  # no MEP loaded at all — return 0 rather than inflate with 1:1
 
     rows = await db.execute(
-        select(Account.current_balance, Account.currency)
-        .where(
+        select(Account.current_balance, Account.currency).where(
             Account.user_id == user_id,
             Account.is_active.is_(True),
             Account.account_type.not_in(_CREDIT_CARD_TYPES),
@@ -117,17 +116,30 @@ async def get_month_summary(db: AsyncSession, user_id, period_month: date) -> Mo
     )
     total_usd = usd_row.scalar() or Decimal("0")
 
-    # Add balances of accounts that don't generate transactions (cash and crypto in USD)
+    # Incluir saldo de cuentas que no generan transacciones (efectivo y cripto),
+    # convirtiendo las que estan en ARS via el TC MEP del periodo en vez de
+    # mezclarlas sin convertir o excluirlas.
+    mep_rate = await db.scalar(
+        select(ExchangeRate.mep_rate).where(
+            extract("year", ExchangeRate.period_month) == period_month.year,
+            extract("month", ExchangeRate.period_month) == period_month.month,
+        )
+    )
     cash_rows = await db.execute(
         select(Account.current_balance, Account.currency).where(
             Account.user_id == user_id,
             Account.is_active.is_(True),
             Account.account_type.in_([AccountType.cash, AccountType.crypto]),
-            Account.currency == CurrencyType.USD,
         )
     )
-    for balance, _ in cash_rows:
-        total_usd += balance or Decimal("0")
+    for balance, currency in cash_rows:
+        balance = balance or Decimal("0")
+        if currency == CurrencyType.USD:
+            total_usd += balance
+        elif mep_rate:
+            total_usd += balance / mep_rate
+        # Si es ARS y no hay TC declarado para el periodo, se omite: no se puede
+        # convertir de forma segura, y sumarlo sin convertir mezclaria las monedas.
 
     return MonthSummary(total_usd=total_usd, savings=savings, by_category=by_category)
 
@@ -178,7 +190,9 @@ async def get_flujo_del_mes(
     }
 
 
-async def _get_patrimonio_for_series(db: AsyncSession, user_id, month: date, anchor: date) -> float | None:
+async def _get_patrimonio_for_series(
+    db: AsyncSession, user_id, month: date, anchor: date
+) -> float | None:
     """Live current_balance para el mes ancla (más reciente), snapshot LLM para meses pasados."""
     if month == anchor:
         val = await get_patrimonio_actual(db, user_id, month)
@@ -232,9 +246,7 @@ async def _get_cartera_usd_for_month(db: AsyncSession, user_id, month: date, mep
     return float(total_ars / mep) if total_ars else None
 
 
-async def get_monthly_series(
-    db: AsyncSession, user_id, anchor: date, count: int = 6
-) -> list[dict]:
+async def get_monthly_series(db: AsyncSession, user_id, anchor: date, count: int = 6) -> list[dict]:
     """
     Serie mensual (más reciente primero → oldest last se revierte al final) para
     el gráfico compuesto y la tabla de flujo: hasta `count` meses terminando en
@@ -253,12 +265,8 @@ async def get_monthly_series(
         flujo = await get_flujo_del_mes(db, user_id, month)
         mep = await _get_mep_for_month(db, month)
 
-        resultado_usd = (
-            float(Decimal(str(flujo["resultado_ars"])) / mep) if mep else None
-        )
-        gasto_usd = (
-            float(abs(Decimal(str(flujo["egresos_ars"]))) / mep) if mep else None
-        )
+        resultado_usd = float(Decimal(str(flujo["resultado_ars"])) / mep) if mep else None
+        gasto_usd = float(abs(Decimal(str(flujo["egresos_ars"]))) / mep) if mep else None
         patrimonio_usd = await _get_patrimonio_for_series(db, user_id, month, anchor)
         cartera_usd = await _get_cartera_usd_for_month(db, user_id, month, mep)
 
@@ -293,7 +301,9 @@ def generate_insights(
     if current_flujo and previous_flujo:
         prev_resultado = previous_flujo.get("resultado_ars", 0)
         if prev_resultado:
-            diff_pct = ((current_flujo["resultado_ars"] - prev_resultado) / abs(prev_resultado)) * 100
+            diff_pct = (
+                (current_flujo["resultado_ars"] - prev_resultado) / abs(prev_resultado)
+            ) * 100
             if abs(diff_pct) >= 5:
                 direction = "mayor" if diff_pct > 0 else "menor"
                 insights.append(
@@ -306,7 +316,9 @@ def generate_insights(
             diff_pct = ((current_egresos - prev_egresos) / prev_egresos) * 100
             if abs(diff_pct) >= 5:
                 direction = "aumentaron" if diff_pct > 0 else "bajaron"
-                insights.append(f"Tus gastos {direction} un {abs(diff_pct):.0f}% respecto al mes pasado")
+                insights.append(
+                    f"Tus gastos {direction} un {abs(diff_pct):.0f}% respecto al mes pasado"
+                )
 
     portfolio_change = current_month.total_usd - (
         previous_month.total_usd if previous_month else Decimal("0")

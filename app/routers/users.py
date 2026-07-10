@@ -46,12 +46,8 @@ async def delete_my_data(
     """Borra uploads, transacciones, snapshots y resetea balances. El usuario queda intacto."""
     await s3.delete_prefix(f"uploads/{current_user.id}/")
 
-    await db.execute(
-        delete(FinancialSnapshot).where(FinancialSnapshot.user_id == current_user.id)
-    )
-    await db.execute(
-        delete(Upload).where(Upload.user_id == current_user.id)
-    )
+    await db.execute(delete(FinancialSnapshot).where(FinancialSnapshot.user_id == current_user.id))
+    await db.execute(delete(Upload).where(Upload.user_id == current_user.id))
     await db.execute(
         update(Account)
         .where(Account.user_id == current_user.id)

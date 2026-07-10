@@ -31,9 +31,7 @@ def call_llm(prompt: str, system: str) -> str:
     return _extract_text(message)
 
 
-def call_llm_with_skill(
-    prompt: str, system: str, model: str | None = None
-) -> tuple[str, dict]:
+def call_llm_with_skill(prompt: str, system: str, model: str | None = None) -> tuple[str, dict]:
     """
     Llama al LLM con el system prompt de la skill (módulos dinámicos), activando
     cache_control sobre el bloque de system para no pagar precio completo en cada

@@ -172,7 +172,9 @@ async def process_upload(message: dict) -> None:
 
                 sub_mep = await _get_mep_rate(db, sub_period)  # exact or most-recent fallback
                 if sub_mep is None:
-                    raise ValueError(f"Sin tipo de cambio MEP disponible para {sub_period} — cargá al menos un TC antes de procesar este upload")
+                    raise ValueError(
+                        f"Sin tipo de cambio MEP disponible para {sub_period} — cargá al menos un TC antes de procesar este upload"
+                    )
                 sub_rate = sub_mep
 
                 sub_txns = apply_mep_conversion(list(sub_txns_raw), sub_rate)
@@ -358,9 +360,7 @@ async def _get_category_rules(db, user_id: uuid.UUID) -> dict[str, str]:
 
 async def _get_mep_rate(db, period_month: date) -> Decimal | None:
     """Return MEP rate for the exact period, or the most recent prior rate. Never 1:1."""
-    rate = await db.scalar(
-        select(ExchangeRate).where(ExchangeRate.period_month == period_month)
-    )
+    rate = await db.scalar(select(ExchangeRate).where(ExchangeRate.period_month == period_month))
     if rate:
         return rate.mep_rate
     # Fallback: most recent rate before this period
@@ -498,7 +498,9 @@ async def _update_account_balances(db, upload: Upload, result: dict) -> None:
         return
 
     if account.account_type.value in _CREDIT_CARD_ACCOUNT_TYPES:
-        print(f"[worker] cuenta '{account.name}' es tarjeta de crédito — current_balance no actualizado")
+        print(
+            f"[worker] cuenta '{account.name}' es tarjeta de crédito — current_balance no actualizado"
+        )
         return
 
     entries = [(name, data) for name, data in libro.items() if isinstance(data, dict)]
@@ -609,7 +611,9 @@ def _apply_fiscal_rules(transactions: list[dict]) -> list[dict]:
             txn["category"] = "Impuestos"
             if txn.get("amount", 0) < 0:
                 txn["amount"] = -txn["amount"]
-                print(f"[worker] CR.* crédito fiscal — signo corregido a positivo: {txn['description']!r}")
+                print(
+                    f"[worker] CR.* crédito fiscal — signo corregido a positivo: {txn['description']!r}"
+                )
     return transactions
 
 
@@ -629,11 +633,15 @@ def _apply_transfer_direction_rules(transactions: list[dict]) -> list[dict]:
             continue
         if desc.startswith("transferencia recibida") or desc.startswith("rendimientos"):
             if amount < 0:
-                print(f"[worker] dirección corregida a crédito: {txn['description']!r} ({amount} -> {abs(amount)})")
+                print(
+                    f"[worker] dirección corregida a crédito: {txn['description']!r} ({amount} -> {abs(amount)})"
+                )
                 txn["amount"] = abs(amount)
         elif desc.startswith("transferencia enviada"):
             if amount > 0:
-                print(f"[worker] dirección corregida a débito: {txn['description']!r} ({amount} -> {-abs(amount)})")
+                print(
+                    f"[worker] dirección corregida a débito: {txn['description']!r} ({amount} -> {-abs(amount)})"
+                )
                 txn["amount"] = -abs(amount)
     return transactions
 
@@ -670,7 +678,9 @@ def _dedup_transactions(transactions: list[dict], account_type: str) -> list[dic
     return result
 
 
-async def _save_transactions(db, upload: Upload, transactions: list[dict], account_type: str = "") -> None:
+async def _save_transactions(
+    db, upload: Upload, transactions: list[dict], account_type: str = ""
+) -> None:
     is_credit_card = account_type in _CREDIT_CARD_TYPES
 
     # Strip CC payment lines
