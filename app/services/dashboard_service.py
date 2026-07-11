@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import case, extract, func, or_, select
+from sqlalchemy import case, extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -26,13 +26,6 @@ _CREDIT_CARD_TYPES = [AccountType.credit_card_ars, AccountType.credit_card_usd]
 # realizado, Δ de valuación) — nunca debe mezclarse con gasto/ingreso/flujo bancario,
 # ni siquiera si alguna vez queda una transacción mal asociada a esa cuenta.
 _EXCLUDED_FROM_CASH_FLOW = [*_CREDIT_CARD_TYPES, AccountType.broker]
-
-# Estas categorías representan movimientos de plata, no gasto ni ingreso operativo:
-# "Pago deuda" cancela un consumo ya contado en la tarjeta, "Transferencia interna"
-# mueve plata entre cuentas del mismo usuario, "Rendimiento" es resultado de cartera/
-# inversión (regla inviolable #8). Sumarlas en gasto/ingreso las cuenta dos veces o
-# las mezcla con el resultado operativo del mes.
-_NON_OPERATIONAL_CATEGORIES = ["Pago deuda", "Transferencia interna", "Rendimiento"]
 
 
 def _prev_month(period_month: date) -> date:
@@ -170,9 +163,23 @@ async def get_month_summary(db: AsyncSession, user_id, period_month: date) -> Mo
 async def get_flujo_del_mes(
     db: AsyncSession, user_id, period_month: date
 ) -> dict[str, Decimal]:
-    """Sum ingresos/egresos from non-CC, non-broker account transactions for the period —
-    cartera tiene su propio resultado (ver MonthlyCarteraFlujoLine en el frontend), no se
-    mezcla con el flujo de cuentas bancarias."""
+    """
+    Flujo de fondos real del mes: TODO movimiento de plata en cuentas de efectivo
+    (excluye tarjetas de crédito y broker por tipo de cuenta — cartera tiene su propio
+    resultado, ver MonthlyCarteraFlujoLine en el frontend), sin filtrar por categoría.
+
+    A diferencia de get_month_summary (que arma "Gastos por categoría" y sí necesita
+    excluir Pago deuda/Transferencia interna/Rendimiento para no duplicar un consumo que
+    la tarjeta ya itemizó), acá las tarjetas de crédito ya están fuera del alcance por
+    tipo de cuenta — no hay ningún consumo de tarjeta en esta suma para duplicar. Pagar
+    la tarjeta SÍ es plata real saliendo de una cuenta de efectivo ese mes: excluir "Pago
+    deuda" acá haría que el flujo mostrado deje de corresponderse con el cambio real de
+    saldo de esas cuentas (y hasta puede invertir el signo del resultado del mes).
+    "Transferencia interna" entre dos cuentas de efectivo del usuario se cancela sola en
+    esta suma (entra en una punta, sale en la otra); si una punta cae fuera del alcance
+    (ej. plata que se manda a la cuenta comitente), es correcto que SÍ cuente como salida
+    real de efectivo.
+    """
     row = (
         await db.execute(
             select(
@@ -199,10 +206,6 @@ async def get_flujo_del_mes(
                 extract("year", Transaction.date) == period_month.year,
                 extract("month", Transaction.date) == period_month.month,
                 Account.account_type.not_in(_EXCLUDED_FROM_CASH_FLOW),
-                or_(
-                    Transaction.category.is_(None),
-                    Transaction.category.not_in(_NON_OPERATIONAL_CATEGORIES),
-                ),
             )
         )
     ).one()
