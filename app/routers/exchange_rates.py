@@ -33,8 +33,11 @@ async def set_exchange_rate(
     )
     if rate:
         rate.mep_rate = body.mep_rate
+        rate.source = body.source
     else:
-        rate = ExchangeRate(period_month=body.period_month, mep_rate=body.mep_rate, source="manual")
+        rate = ExchangeRate(
+            period_month=body.period_month, mep_rate=body.mep_rate, source=body.source
+        )
         db.add(rate)
 
     await db.flush()

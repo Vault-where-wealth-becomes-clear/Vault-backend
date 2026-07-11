@@ -22,7 +22,8 @@ objeto JSON válido, sin texto adicional antes o después, con esta estructura
     "nivel_detectado": 1,
     "posiciones": [
       {
-        "instrumento": "GGAL",
+        "instrumento": "GRUPO FINANCIERO GALICIA B",
+        "ticker": "GGAL",
         "tipo": "accion_local",
         "moneda": "ARS",
         "cantidad": 100,
@@ -62,6 +63,33 @@ objeto JSON válido, sin texto adicional antes o después, con esta estructura
 ```
 
 Reglas estrictas para `cuenta_comitente`:
+- `posiciones[].instrumento` y `posiciones[].ticker` son campos **separados** — el
+  archivo del broker siempre trae ambos en columnas distintas (ej. "Ticker" y
+  "Descripción"). `instrumento` es SIEMPRE la descripción completa (ej. "GRUPO
+  FINANCIERO GALICIA B", "BOPREAL S. 1 D VTO31/10/27"), nunca el código solo.
+  `ticker` es SIEMPRE el código corto tal cual figura en la columna Ticker/Código del
+  archivo (ej. "GGAL", "BPOD7"). **Nunca** pongas el ticker dentro de `instrumento`
+  (ni entre paréntesis ni de ninguna otra forma), **nunca** dejes `ticker` como string
+  vacío `""` (si no aplica, usar `null`, nunca `""`), y nunca dejes `instrumento` vacío
+  o igual al ticker cuando el archivo trae una descripción distinta.
+  - Para `efectivo_comitente` (Pesos, Dólar MEP) y FCI, que no cotizan con ticker de
+    mercado: `ticker: null`.
+  - **Regla mecánica para snapshots de tenencias tipo INVIU** (tabla con encabezado
+    "Ticker ISIN Código Descripción Tipo de Activo..."): cada fila de datos empieza
+    siempre con el mismo patrón posicional, sin excepción — `TICKER ISIN CÓDIGO
+    CÓDIGO/DESCRIPCIÓN TIPO CANTIDAD...`. El **primer token de la fila es siempre el
+    ticker** (ej. `BPOD7`, `AO28`, `GGAL`); el segundo token es el ISIN (12 caracteres,
+    ignorarlo); el resto hasta la palabra que indica el tipo de activo (`Bonos`,
+    `Acciones`, `Cedear`, `Fondos`, `Moneda`) es la descripción, sacando el código
+    numérico duplicado antes de la barra `/`.
+    - Ejemplo real: la fila `BPOD7 AR0314171247 9237 9237 / BOPREAL S. 1 D
+      VTO31/10/27 U$S CG Bonos 1.000,00 ...` da `"ticker": "BPOD7"`,
+      `"instrumento": "BOPREAL S. 1 D VTO31/10/27 U$S CG"`. El texto puede aparecer
+      partido en dos líneas en la extracción (ej. "...V.09" seguido de "/07/41" en la
+      línea siguiente) — igual corresponde a la misma fila y el mismo ticker.
+    - Si extraés 10 tickers reales de la tabla de bonos/acciones/cedears y ves que
+      `ticker` te quedó vacío o repetido con `instrumento`, releé la fila: te falta
+      tomar el primer token, no estás inventando nada nuevo.
 - `posiciones[].tipo` DEBE ser uno de estos 11 valores exactos: `accion_local`, `cedear`,
   `bono_ars`, `bono_usd`, `fci_ars`, `fci_usd`, `lecap_boncap`, `on_ars`, `on_usd`,
   `efectivo_comitente`, `otro`. Nunca inventar variantes.

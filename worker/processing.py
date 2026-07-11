@@ -10,7 +10,13 @@ from app.database import AsyncSessionLocal
 from app.models.account import Account
 from app.models.cartera_snapshot import CarteraSnapshot
 from app.models.category_rule import CategoryRule
-from app.models.enums import CurrencyType, InstrumentoTipo, SkillModule, UploadStatus
+from app.models.enums import (
+    TRANSACTION_CATEGORIES,
+    CurrencyType,
+    InstrumentoTipo,
+    SkillModule,
+    UploadStatus,
+)
 from app.models.exchange_rate import ExchangeRate
 from app.models.financial_snapshot import FinancialSnapshot
 from app.models.installment import Installment
@@ -36,6 +42,7 @@ from worker.processors.ledger_verifier import (
 )
 from worker.processors.mep_converter import apply_mep_conversion
 from worker.processors.redaction import redact_sensitive_numbers
+from worker.processors.transfer_reconciler import reconcile_internal_transfers
 
 
 async def process_upload(message: dict) -> None:
@@ -109,6 +116,7 @@ async def process_upload(message: dict) -> None:
                 raw_transactions = verify_and_correct_ledger(raw_transactions, extracted_text)
             raw_transactions = _apply_fiscal_rules(raw_transactions)
             raw_transactions = _apply_transfer_direction_rules(raw_transactions)
+            raw_transactions = _apply_pago_deuda_rule(raw_transactions, account_type)
 
             if account_type in _CREDIT_CARD_ACCOUNT_TYPES:
                 # Un resumen de tarjeta es siempre UN único período de
@@ -119,6 +127,13 @@ async def process_upload(message: dict) -> None:
                 # transacción crearía un período fantasma para esa fecha de
                 # compra vieja, sin tipo de cambio MEP cargado, y tiraba
                 # abajo toda la carga.
+                txn_by_month = {hint_period.strftime("%Y-%m"): raw_transactions}
+            elif account_type == "broker":
+                # Un snapshot de tenencias (Nivel 1) no tiene movimientos
+                # bancarios — transacciones viene [] a propósito (ver regla en
+                # _output_contract.md). Cartera no usa el libro diario, así que
+                # el período es siempre el hint del usuario, nunca derivado de
+                # agrupar fechas de transacciones que no existen.
                 txn_by_month = {hint_period.strftime("%Y-%m"): raw_transactions}
             else:
                 # Group by detected month — ignores user-selected hint_period
@@ -186,6 +201,11 @@ async def process_upload(message: dict) -> None:
                     sub_upload.period_month = sub_period
                     sub_upload.opening_balance_ars = opening_ars
                     sub_upload.opening_balance_usd = opening_usd
+                    # Limpiar cualquier error/aviso de un intento anterior sobre esta
+                    # misma fila de upload — si no, un mensaje viejo (ej. de un
+                    # reintento previo fallido) queda pegado aunque este reprocesamiento
+                    # haya salido bien o el motivo de "review" ahora sea otro.
+                    sub_upload.error_message = None
                     sub_opening_ars, sub_opening_usd = opening_ars, opening_usd
 
                     if account_type not in _CREDIT_CARD_ACCOUNT_TYPES:
@@ -288,6 +308,10 @@ async def process_upload(message: dict) -> None:
                     sub_upload.error_message = " | ".join(review_notes)
                     has_any_review = True
 
+            resolved_transfers = await reconcile_internal_transfers(db, user_id)
+            if resolved_transfers:
+                print(f"[worker] {resolved_transfers} transacción(es) confirmadas como Transferencia interna")
+
             # Snapshot and balances: last detected period wins
             last_period = date.fromisoformat(months[-1] + "-01")
 
@@ -298,7 +322,12 @@ async def process_upload(message: dict) -> None:
                 )
 
             await _upsert_financial_snapshot(db, user_id, last_period, result)
-            await _update_account_balances(db, upload, result)
+            verified_closing = (
+                (carried_usd if is_usd_account else carried_ars)
+                if account_type not in _CREDIT_CARD_ACCOUNT_TYPES
+                else None
+            )
+            await _update_account_balances(db, upload, result, verified_closing)
             await _save_module_request_results(db, upload.id, resolved_modules, result)
 
             try:
@@ -485,14 +514,9 @@ def _extract_tarjeta_remainder(result: dict, is_usd: bool) -> Decimal:
     return remainder if remainder > 0 else Decimal("0")
 
 
-async def _update_account_balances(db, upload: Upload, result: dict) -> None:
-    flujo = result.get("flujo_mensual")
-    if not flujo:
-        return
-    libro = flujo.get("libro_diario", {})
-    if not libro or not isinstance(libro, dict):
-        return
-
+async def _update_account_balances(
+    db, upload: Upload, result: dict, verified_closing: Decimal | None = None
+) -> None:
     account = await db.get(Account, upload.account_id)
     if not account:
         return
@@ -501,6 +525,33 @@ async def _update_account_balances(db, upload: Upload, result: dict) -> None:
         print(
             f"[worker] cuenta '{account.name}' es tarjeta de crédito — current_balance no actualizado"
         )
+        return
+
+    if account.account_type.value == "broker":
+        # Cuenta comitente no tiene libro diario propio (transacciones viene [] a
+        # propósito) — cualquier entrada en flujo_mensual acá es del contexto
+        # compartido del período, no de esta cuenta. Su valor real vive en
+        # cartera_snapshots, nunca en current_balance.
+        print(f"[worker] cuenta '{account.name}' es broker — current_balance no actualizado")
+        return
+
+    if verified_closing is not None:
+        # Saldo de cierre real, encadenado sub-período a sub-período contra el
+        # texto impreso del extracto (last_printed_saldo/carried_ars/carried_usd
+        # en process_upload) — preferido siempre por sobre el saldo_final que
+        # reporta el LLM en flujo_mensual, que en un PDF que consolida varios
+        # meses en un solo archivo solo describe el PRIMER período detectado y
+        # queda congelado ahí para siempre en vez de avanzar al último.
+        account.current_balance = verified_closing
+        await db.flush()
+        print(f"[worker] cuenta '{account.name}': saldo verificado → {verified_closing}")
+        return
+
+    flujo = result.get("flujo_mensual")
+    if not flujo:
+        return
+    libro = flujo.get("libro_diario", {})
+    if not libro or not isinstance(libro, dict):
         return
 
     entries = [(name, data) for name, data in libro.items() if isinstance(data, dict)]
@@ -512,7 +563,7 @@ async def _update_account_balances(db, upload: Upload, result: dict) -> None:
     if saldo_final is not None:
         account.current_balance = Decimal(str(saldo_final))
         await db.flush()
-        print(f"[worker] cuenta '{account.name}': saldo_final → {saldo_final}")
+        print(f"[worker] cuenta '{account.name}': saldo_final (LLM, sin verificar) → {saldo_final}")
 
 
 async def _save_module_request_results(
@@ -586,6 +637,10 @@ def _normalize_cartera(cartera: dict) -> dict:
     for pos in posiciones:
         if pos.get("tipo") not in tipos_validos:
             pos["tipo"] = InstrumentoTipo.otro.value
+        # El LLM a veces manda "" en vez de null cuando no hay ticker — normalizar acá
+        # para que el frontend nunca tenga que distinguir entre los dos.
+        if not pos.get("ticker"):
+            pos["ticker"] = None
 
     total = sum(Decimal(str(p.get("valor_base_ars", 0) or 0)) for p in posiciones)
     for pos in posiciones:
@@ -646,6 +701,43 @@ def _apply_transfer_direction_rules(transactions: list[dict]) -> list[dict]:
     return transactions
 
 
+def _looks_like_tarjeta_payment(description: str) -> bool:
+    upper = description.upper()
+    return "PAGO" in upper and "TARJETA" in upper
+
+
+def _apply_pago_deuda_rule(transactions: list[dict], account_type: str) -> list[dict]:
+    """
+    Fuerza category="Pago deuda" en el lado bancario (no en la propia tarjeta,
+    donde estas líneas ya se descartan vía _is_cc_payment) cuando la descripción
+    es inequívoca — "PAGO...TARJETA" es una frase de liquidación de deuda, nunca
+    un consumo. Sin esto, el mismo pago queda contado dos veces en Gastos por
+    categoría y en el Flujo del período: una vez itemizado en la tarjeta, otra
+    vez como el débito bancario que la cancela.
+    """
+    if account_type in _CREDIT_CARD_ACCOUNT_TYPES:
+        return transactions
+    for txn in transactions:
+        if _looks_like_tarjeta_payment(txn.get("description", "")):
+            txn["category"] = "Pago deuda"
+    return transactions
+
+
+def _normalize_category(raw: str | None) -> str | None:
+    """
+    El LLM no siempre respeta el string exacto de la taxonomía (sinónimos,
+    mayúsculas/tildes distintas) — nunca confiar en el valor crudo. Todo lo que
+    no matchee exactamente uno de los strings válidos se coerciona a "Varios",
+    mismo criterio que _normalize_cartera usa para el tipo de instrumento.
+    """
+    category = (raw or "").strip().capitalize()
+    if not category:
+        return None
+    if category not in TRANSACTION_CATEGORIES:
+        return "Varios"
+    return category
+
+
 def _dedup_transactions(transactions: list[dict], account_type: str) -> list[dict]:
     """Collapse only the LLM's ARS/USD double-emission bug: the same PDF row
     reported twice for one (description, date), once in each currency.
@@ -703,7 +795,7 @@ async def _save_transactions(
             amount_ars=txn["amount_ars"],
             amount_usd=txn["amount_usd"],
             currency=txn.get("currency", "ARS"),
-            category=txn.get("category", "").capitalize() or None,
+            category=_normalize_category(txn.get("category")),
             confidence=Decimal(str(txn.get("confidence", 0))),
             needs_review=txn["needs_review"],
             sort_order=i,

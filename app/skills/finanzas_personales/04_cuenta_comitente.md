@@ -75,7 +75,7 @@ No se asume el nivel sin confirmación cuando hay ambigüedad estructural.
 
 **Hoja Cartera — Posiciones del mes (Nivel 1):**
 ```
-INSTRUMENTO | TIPO | MONEDA | CANTIDAD | PRECIO CIERRE | VALOR (moneda) | VALOR (base) | % CARTERA
+TICKER | INSTRUMENTO | TIPO | MONEDA | CANTIDAD | PRECIO CIERRE | VALOR (moneda) | VALOR (base) | % CARTERA
 ```
 > Aunque el archivo del broker incluya columnas como "Costo (PPC)" o "Resultado", la skill las ignora completamente en Nivel 1. No se muestran con advertencia ni atenuadas — no aparecen.
 
@@ -83,7 +83,8 @@ INSTRUMENTO | TIPO | MONEDA | CANTIDAD | PRECIO CIERRE | VALOR (moneda) | VALOR 
 
 | Columna conceptual | Clave JSON | Quién la completa |
 |---|---|---|
-| INSTRUMENTO | `instrumento` | skill (todos los niveles) |
+| TICKER | `ticker` | skill (todos los niveles) — código corto, `null` para efectivo/FCI |
+| INSTRUMENTO | `instrumento` | skill (todos los niveles) — descripción completa, nunca el ticker |
 | TIPO | `tipo` | skill (todos los niveles) |
 | MONEDA | `moneda` | skill (todos los niveles) |
 | CANTIDAD | `cantidad` | skill (todos los niveles) |
@@ -214,7 +215,7 @@ Las retenciones **no se categorizan como gasto del Módulo 2** — no compiten c
 
 **Hoja Cartera — Posiciones del mes (Nivel 3 — completo):**
 ```
-INSTRUMENTO | TIPO | MONEDA | CANTIDAD | PRECIO CIERRE | VALOR (moneda) | VALOR (base) | CPP | RESULTADO $ | REND. % | % CARTERA
+TICKER | INSTRUMENTO | TIPO | MONEDA | CANTIDAD | PRECIO CIERRE | VALOR (moneda) | VALOR (base) | CPP | RESULTADO $ | REND. % | % CARTERA
 ```
 > Las columnas CPP, RESULTADO $ y REND. % se habilitan únicamente en Nivel 3, calculadas desde datos verificables del Reporte de Renta Financiera. Ver tabla de mapeo columna→clave JSON más arriba (Nivel 1) — aplica igual acá.
 

@@ -10,6 +10,7 @@ from app.models.enums import MepSource
 class ExchangeRateCreate(BaseModel):
     period_month: date
     mep_rate: Decimal
+    source: MepSource = MepSource.manual
 
 
 class ExchangeRateRead(BaseModel):

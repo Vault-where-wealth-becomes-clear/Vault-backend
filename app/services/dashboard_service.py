@@ -2,12 +2,12 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import case, extract, func, select
+from sqlalchemy import case, extract, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
 from app.models.cartera_snapshot import CarteraSnapshot
-from app.models.enums import AccountType, CurrencyType
+from app.models.enums import GASTO_CATEGORIES, AccountType, CurrencyType
 from app.models.exchange_rate import ExchangeRate
 from app.models.financial_snapshot import FinancialSnapshot
 from app.models.transaction import Transaction
@@ -26,6 +26,13 @@ _CREDIT_CARD_TYPES = [AccountType.credit_card_ars, AccountType.credit_card_usd]
 # realizado, Δ de valuación) — nunca debe mezclarse con gasto/ingreso/flujo bancario,
 # ni siquiera si alguna vez queda una transacción mal asociada a esa cuenta.
 _EXCLUDED_FROM_CASH_FLOW = [*_CREDIT_CARD_TYPES, AccountType.broker]
+
+# Estas categorías representan movimientos de plata, no gasto ni ingreso operativo:
+# "Pago deuda" cancela un consumo ya contado en la tarjeta, "Transferencia interna"
+# mueve plata entre cuentas del mismo usuario, "Rendimiento" es resultado de cartera/
+# inversión (regla inviolable #8). Sumarlas en gasto/ingreso las cuenta dos veces o
+# las mezcla con el resultado operativo del mes.
+_NON_OPERATIONAL_CATEGORIES = ["Pago deuda", "Transferencia interna", "Rendimiento"]
 
 
 def _prev_month(period_month: date) -> date:
@@ -48,8 +55,10 @@ async def _get_mep_for_month(db: AsyncSession, period_month: date) -> Decimal | 
 
 async def get_patrimonio_actual(db: AsyncSession, user_id, period_month: date) -> Decimal:
     """
-    Suma current_balance de todas las cuentas activas del usuario,
-    excluyendo tarjetas de crédito. Convierte saldos ARS a USD con el MEP del período.
+    Suma current_balance de todas las cuentas activas del usuario (excluyendo tarjetas
+    de crédito y broker — current_balance nunca se actualiza para cuenta comitente, su
+    valor real vive en cartera_snapshots) más el valor de cartera de ese período.
+    Convierte todo a USD con el MEP del período.
     """
     mep = await _get_mep_for_month(db, period_month)
     if mep is None:
@@ -59,7 +68,7 @@ async def get_patrimonio_actual(db: AsyncSession, user_id, period_month: date) -
         select(Account.current_balance, Account.currency).where(
             Account.user_id == user_id,
             Account.is_active.is_(True),
-            Account.account_type.not_in(_CREDIT_CARD_TYPES),
+            Account.account_type.not_in(_EXCLUDED_FROM_CASH_FLOW),
             Account.current_balance.isnot(None),
         )
     )
@@ -67,12 +76,25 @@ async def get_patrimonio_actual(db: AsyncSession, user_id, period_month: date) -
     for balance, currency in rows:
         b = balance or Decimal("0")
         total += (b / mep).quantize(Decimal("0.0001")) if currency == CurrencyType.ARS else b
+
+    cartera_usd = await _get_cartera_usd_for_month(db, user_id, period_month, mep)
+    if cartera_usd:
+        total += Decimal(str(cartera_usd))
+
     return total
 
 
 async def get_month_summary(db: AsyncSession, user_id, period_month: date) -> MonthSummary:
     # Spending by category — all accounts incl. credit cards (real expenses); excluye
-    # solo broker (cartera tiene su propio concepto de resultado, nunca gasto/ingreso).
+    # broker (cartera tiene su propio concepto de resultado, nunca gasto/ingreso) y,
+    # vía el allowlist de GASTO_CATEGORIES, cualquier categoría que no sea gasto real
+    # (Ingreso operativo, Pago deuda, Transferencia interna, Rendimiento, Sin categoría,
+    # etc.) — este dict alimenta directamente el pie chart "Gastos por categoría", que
+    # nunca debe mostrar ingreso mezclado con consumo. GASTO_CATEGORIES es un allowlist
+    # por nombre de categoría, no por monto/cuenta/usuario, así que el criterio es el
+    # mismo para cualquier usuario y cualquier categoría nueva que el LLM invente se cae
+    # sola del lado seguro (ver _normalize_category, que ya coerciona lo no reconocido a
+    # "Varios" — sí incluido acá).
     rows = await db.execute(
         select(
             Transaction.category,
@@ -84,6 +106,7 @@ async def get_month_summary(db: AsyncSession, user_id, period_month: date) -> Mo
             extract("year", Transaction.date) == period_month.year,
             extract("month", Transaction.date) == period_month.month,
             Account.account_type != AccountType.broker,
+            Transaction.category.in_(GASTO_CATEGORIES),
         )
         .group_by(Transaction.category)
     )
@@ -176,6 +199,10 @@ async def get_flujo_del_mes(
                 extract("year", Transaction.date) == period_month.year,
                 extract("month", Transaction.date) == period_month.month,
                 Account.account_type.not_in(_EXCLUDED_FROM_CASH_FLOW),
+                or_(
+                    Transaction.category.is_(None),
+                    Transaction.category.not_in(_NON_OPERATIONAL_CATEGORIES),
+                ),
             )
         )
     ).one()

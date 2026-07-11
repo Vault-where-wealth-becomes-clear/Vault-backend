@@ -19,6 +19,7 @@ InstrumentoTipo = Literal[
 
 class CarteraPosicion(BaseModel):
     instrumento: str
+    ticker: str | None = None
     tipo: InstrumentoTipo
     moneda: Literal["ARS", "USD"]
     cantidad: float
