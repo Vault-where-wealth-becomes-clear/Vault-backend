@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.aws.s3 import S3Client
 from app.config import settings
@@ -36,6 +36,10 @@ from worker.processors.ledger_verifier import (
 from worker.processors.mep_converter import apply_mep_conversion
 from worker.processors.redaction import redact_sensitive_numbers
 
+# Estados en los que el pipeline ya corrio de punta a punta. `error` queda
+# afuera a proposito: ese si tiene que reprocesarse en el reintento.
+_TERMINAL_STATUSES = (UploadStatus.done, UploadStatus.review)
+
 
 async def process_upload(message: dict) -> None:
     upload_id = uuid.UUID(message["upload_id"])
@@ -48,6 +52,14 @@ async def process_upload(message: dict) -> None:
     async with AsyncSessionLocal() as db:
         upload = await db.get(Upload, upload_id)
         if upload is None:
+            return
+        if upload.status in _TERMINAL_STATUSES:
+            # Redelivery de un upload que ya termino. Pasa cuando el
+            # `delete_message` de worker/run.py falla despues de un
+            # procesamiento exitoso: el mensaje vuelve a la cola aunque el
+            # trabajo ya este hecho. Reprocesar duplicaria el ledger del
+            # usuario y ademas volveria a pagar la llamada al LLM.
+            print(f"[worker] upload {upload_id} ya esta en {upload.status.value} — se omite")
             return
         account = await db.get(Account, upload.account_id)
 
@@ -602,6 +614,11 @@ def _dedup_transactions(transactions: list[dict], account_type: str) -> list[dic
 async def _save_transactions(
     db, upload: Upload, transactions: list[dict], account_type: str = ""
 ) -> None:
+    # Reintento sobre un upload que quedo a medias: reemplazar lo que haya en
+    # vez de acumular encima. Los Installment cuelgan de transaction_id con
+    # ON DELETE CASCADE, asi que se van junto con las filas viejas.
+    await db.execute(delete(Transaction).where(Transaction.upload_id == upload.id))
+
     is_credit_card = account_type in _CREDIT_CARD_TYPES
 
     # Strip CC payment lines
