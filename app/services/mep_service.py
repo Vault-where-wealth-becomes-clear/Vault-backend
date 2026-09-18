@@ -1,3 +1,4 @@
+import uuid
 from datetime import date
 from decimal import Decimal
 
@@ -9,17 +10,22 @@ from app.models.transaction import Transaction
 from app.models.upload import Upload
 
 
-async def recalculate_period(db: AsyncSession, period_month: date, mep_rate: Decimal) -> int:
+async def recalculate_period(
+    db: AsyncSession, user_id: uuid.UUID, period_month: date, mep_rate: Decimal
+) -> int:
     """Recalcula el lado derivado de amount_ars/amount_usd usando el TC MEP dado.
 
     La moneda nativa de cada transaccion (Transaction.currency) es el dato real
     del extracto y nunca se sobreescribe; solo se recalcula el lado convertido,
     para no mezclar pesos y dolares al redeclarar el TC de un periodo.
 
-    Solo afecta el periodo indicado, nunca recalcula retroactivamente otros periodos.
+    Solo afecta el periodo indicado, nunca recalcula retroactivamente otros
+    periodos, y solo toca los uploads de `user_id`: sin ese filtro, redeclarar
+    el TC de un mes reescribia los montos convertidos de todos los usuarios.
     """
     upload_ids = await db.scalars(
         select(Upload.id).where(
+            Upload.user_id == user_id,
             extract("year", Upload.period_month) == period_month.year,
             extract("month", Upload.period_month) == period_month.month,
         )
