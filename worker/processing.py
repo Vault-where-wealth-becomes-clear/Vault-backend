@@ -2,6 +2,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
+import structlog
 from sqlalchemy import select
 
 from app.aws.s3 import S3Client
@@ -35,6 +36,8 @@ from worker.processors.ledger_verifier import (
 )
 from worker.processors.mep_converter import apply_mep_conversion
 from worker.processors.redaction import redact_sensitive_numbers
+
+logger = structlog.get_logger()
 
 
 async def process_upload(message: dict) -> None:
@@ -76,7 +79,7 @@ async def process_upload(message: dict) -> None:
             )
 
             model = select_model(extracted_text)
-            print(f"[worker] modelo elegido: {model}")
+            logger.info("model_selected", model=model)
             raw_response, llm_usage = call_llm_with_skill(user_message, system_prompt, model=model)
             result = parse_skill_response(raw_response)
 
@@ -135,7 +138,7 @@ async def process_upload(message: dict) -> None:
                 opening_ars, opening_usd = _extract_opening_balance(result, is_usd_account)
 
             if len(months) > 1:
-                print(f"[worker] PDF multi-período detectado: {months}")
+                logger.info("multi_period_pdf_detected", months=months)
 
             has_any_review = False
             # Saldo de cierre real (impreso) del sub-período anterior, para
@@ -223,9 +226,10 @@ async def process_upload(message: dict) -> None:
                         )
                     )
                     if existing is not None:
-                        print(
-                            f"[worker] {month_key} ya tiene una carga cerrada "
-                            f"({existing.id}) para esta cuenta — se omite para no duplicar"
+                        logger.info(
+                            "period_already_closed",
+                            month=month_key,
+                            existing_upload_id=str(existing.id),
                         )
                         continue
 
@@ -243,7 +247,9 @@ async def process_upload(message: dict) -> None:
                     )
                     db.add(sub_upload)
                     await db.flush()
-                    print(f"[worker] sub-upload {sub_upload.id} creado para {month_key}")
+                    logger.info(
+                        "sub_upload_created", sub_upload_id=str(sub_upload.id), month=month_key
+                    )
 
                 # sub_txns, not sub_auto + sub_review: split_by_confidence tags
                 # needs_review in place but concatenating the two filtered views
@@ -268,7 +274,7 @@ async def process_upload(message: dict) -> None:
                             f"${gap_str} del saldo que figura impreso en el extracto "
                             f"para este período. Revisar movimientos."
                         )
-                        print(f"[worker] {month_key}: {note}")
+                        logger.warning("reconciliation_gap", month=month_key, note=note)
                         review_notes.append(note)
 
                     closing = last_printed_saldo(sub_txns)
@@ -294,7 +300,7 @@ async def process_upload(message: dict) -> None:
             try:
                 await s3.delete_object(s3_key)
             except Exception as cleanup_exc:
-                print(f"[worker] no se pudo borrar {s3_key} de S3: {cleanup_exc}")
+                logger.warning("s3_cleanup_failed", s3_key=s3_key, error=str(cleanup_exc))
 
             await db.commit()
         except Exception as exc:
@@ -439,9 +445,7 @@ async def _update_account_balances(db, upload: Upload, result: dict) -> None:
         return
 
     if account.account_type.value in _CREDIT_CARD_ACCOUNT_TYPES:
-        print(
-            f"[worker] cuenta '{account.name}' es tarjeta de crédito — current_balance no actualizado"
-        )
+        logger.info("credit_card_balance_not_updated", account=account.name)
         return
 
     entries = [(name, data) for name, data in libro.items() if isinstance(data, dict)]
@@ -453,7 +457,7 @@ async def _update_account_balances(db, upload: Upload, result: dict) -> None:
     if saldo_final is not None:
         account.current_balance = Decimal(str(saldo_final))
         await db.flush()
-        print(f"[worker] cuenta '{account.name}': saldo_final → {saldo_final}")
+        logger.info("account_balance_updated", account=account.name, saldo_final=str(saldo_final))
 
 
 async def _save_module_request_results(
@@ -532,9 +536,7 @@ def _apply_fiscal_rules(transactions: list[dict]) -> list[dict]:
             txn["category"] = "Impuestos"
             if txn.get("amount", 0) < 0:
                 txn["amount"] = -txn["amount"]
-                print(
-                    f"[worker] CR.* crédito fiscal — signo corregido a positivo: {txn['description']!r}"
-                )
+                logger.info("fiscal_credit_sign_corrected", description=txn["description"])
     return transactions
 
 
@@ -554,14 +556,22 @@ def _apply_transfer_direction_rules(transactions: list[dict]) -> list[dict]:
             continue
         if desc.startswith("transferencia recibida") or desc.startswith("rendimientos"):
             if amount < 0:
-                print(
-                    f"[worker] dirección corregida a crédito: {txn['description']!r} ({amount} -> {abs(amount)})"
+                logger.info(
+                    "transfer_direction_corrected",
+                    direction="credito",
+                    description=txn["description"],
+                    before=amount,
+                    after=abs(amount),
                 )
                 txn["amount"] = abs(amount)
         elif desc.startswith("transferencia enviada"):
             if amount > 0:
-                print(
-                    f"[worker] dirección corregida a débito: {txn['description']!r} ({amount} -> {-abs(amount)})"
+                logger.info(
+                    "transfer_direction_corrected",
+                    direction="debito",
+                    description=txn["description"],
+                    before=amount,
+                    after=-abs(amount),
                 )
                 txn["amount"] = -abs(amount)
     return transactions
@@ -592,7 +602,7 @@ def _dedup_transactions(transactions: list[dict], account_type: str) -> list[dic
                 chosen = next(t for t in group if t.get("currency") == "ARS")
             else:
                 chosen = next(t for t in group if t.get("currency") == "USD")
-            print(f"[worker] dedup: fila duplicada ARS/USD descartada — '{key[0]}' {key[1]}")
+            logger.info("duplicate_row_dropped", description=key[0], date=str(key[1]))
             result.append(chosen)
         else:
             result.extend(group)
@@ -609,7 +619,7 @@ async def _save_transactions(
         before = len(transactions)
         transactions = [t for t in transactions if not _is_cc_payment(t.get("description", ""))]
         if len(transactions) < before:
-            print(f"[worker] excluidos {before - len(transactions)} pago(s) de tarjeta")
+            logger.info("credit_card_payments_excluded", count=before - len(transactions))
 
     # Dedup by (description, date)
     transactions = _dedup_transactions(transactions, account_type)
