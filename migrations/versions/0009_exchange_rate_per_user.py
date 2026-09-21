@@ -1,7 +1,7 @@
 """exchange_rates: scope per user instead of one global table
 
 Revision ID: 0009
-Revises: 0008
+Revises: 0007
 Create Date: 2026-09-18
 
 """
@@ -12,7 +12,12 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0009"
-down_revision: str | None = "0008"
+# Originalmente encadenaba sobre "0008" (fix/upload-idempotency, PR #37),
+# que se aprobó pero no se mergeó junto con esta. Se corrigió a "0007" (la
+# última migración real en main) para no dejar la cadena de Alembic rota.
+# Cuando la PR #37 se mergee, su migración "0008" va a tener que pasar a
+# encadenar *después* de esta "0009" (down_revision = "0009"), no antes.
+down_revision: str | None = "0007"
 branch_labels: Sequence[str] | None = None
 depends_on: Sequence[str] | None = None
 
