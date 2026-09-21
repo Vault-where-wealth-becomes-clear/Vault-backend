@@ -8,10 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.enums import CurrencyType
 from app.models.transaction import Transaction
 from app.models.upload import Upload
+from app.services import audit_service
 
 
 async def recalculate_period(
-    db: AsyncSession, user_id: uuid.UUID, period_month: date, mep_rate: Decimal
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    period_month: date,
+    mep_rate: Decimal,
+    actor_user_id: uuid.UUID | None = None,
 ) -> int:
     """Recalcula el lado derivado de amount_ars/amount_usd usando el TC MEP dado.
 
@@ -22,6 +27,11 @@ async def recalculate_period(
     Solo afecta el periodo indicado, nunca recalcula retroactivamente otros
     periodos, y solo toca los uploads de `user_id`: sin ese filtro, redeclarar
     el TC de un mes reescribia los montos convertidos de todos los usuarios.
+
+    actor_user_id es quien disparo el recalculo (None = proceso automatico,
+    ej. el job diario de MEP). Se deja un renglon en audit_log solo cuando
+    de verdad se toco algo, para no llenar la tabla con los no-ops del job
+    automatico corriendo sobre usuarios sin uploads ese mes.
     """
     upload_ids = await db.scalars(
         select(Upload.id).where(
@@ -50,4 +60,22 @@ async def recalculate_period(
         )
         .values(amount_ars=Transaction.amount_usd * mep_rate)
     )
-    return (ars_result.rowcount or 0) + (usd_result.rowcount or 0)
+    total_updated = (ars_result.rowcount or 0) + (usd_result.rowcount or 0)
+
+    if total_updated:
+        await audit_service.record(
+            db,
+            user_id=user_id,
+            actor_user_id=actor_user_id,
+            entity_type="exchange_rate",
+            entity_id=None,
+            action="transactions_recalculated",
+            before=None,
+            after={
+                "period_month": period_month.isoformat(),
+                "mep_rate": float(mep_rate),
+                "transactions_updated": total_updated,
+            },
+        )
+
+    return total_updated

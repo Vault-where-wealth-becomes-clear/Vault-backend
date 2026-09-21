@@ -19,6 +19,7 @@ from app.routers import (
     exports,
     health,
     installments,
+    internal,
     transactions,
     uploads,
     users,
@@ -100,3 +101,4 @@ app.include_router(exchange_rates.router)
 app.include_router(category_rules.router)
 app.include_router(dashboard.router)
 app.include_router(exports.router)
+app.include_router(internal.router)

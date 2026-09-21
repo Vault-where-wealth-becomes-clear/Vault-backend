@@ -9,7 +9,7 @@ from app.config import settings
 from app.database import Base
 from app.models import (  # noqa: F401
     Account,
-    CategoryLimit,
+    AuditLog,
     CategoryRule,
     ExchangeRate,
     Installment,

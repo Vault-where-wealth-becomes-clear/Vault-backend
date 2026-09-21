@@ -15,6 +15,7 @@ from app.models.transaction import Transaction
 from app.models.upload import Upload
 from app.models.user import User
 from app.schemas.transaction import TransactionCreate, TransactionRead, TransactionUpdate
+from app.services import audit_service
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -105,9 +106,22 @@ async def correct_transaction(
     if not transaction:
         raise HTTPException(status_code=404, detail="Transaccion no encontrada")
 
-    transaction.category = body.category.capitalize() if body.category else None
+    old_category = transaction.category
+    new_category = body.category.capitalize() if body.category else None
+    transaction.category = new_category
     transaction.is_corrected = True
     transaction.needs_review = False
+
+    await audit_service.record(
+        db,
+        user_id=current_user.id,
+        actor_user_id=current_user.id,
+        entity_type="transaction",
+        entity_id=transaction.id,
+        action="category_corrected",
+        before={"category": old_category},
+        after={"category": new_category},
+    )
 
     if body.remember_rule:
         keyword = transaction.description.split(" ")[0]
