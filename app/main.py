@@ -10,6 +10,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
 from app.limiter import limiter
+from app.logging_config import configure_logging
 from app.routers import (
     accounts,
     auth,
@@ -24,12 +25,7 @@ from app.routers import (
     users,
 )
 
-structlog.configure(
-    processors=[
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.JSONRenderer(),
-    ]
-)
+configure_logging()
 logger = structlog.get_logger()
 
 

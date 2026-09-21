@@ -1,6 +1,10 @@
 import re
 from decimal import Decimal
 
+import structlog
+
+logger = structlog.get_logger()
+
 _LINE_RE = re.compile(
     r"^\d{2}-[A-Za-z]{3}-\d{2}\s+.*?(?P<cupon>\d{5,7})\s+(?P<amount>-?[0-9.]*[0-9],[0-9]{2})\s*$"
 )
@@ -51,10 +55,12 @@ def verify_and_correct_amounts(transactions: list[dict], extracted_text: str) ->
             continue  # coincide con lo impreso, nada que corregir
 
         corrected = float(sign * real)
-        print(
-            f"[worker] cupón {cupon}: monto del LLM ({amount}) no coincide con el "
-            f"impreso ({corrected}) — corregido y marcado para revisión: "
-            f"{txn.get('description')!r}"
+        logger.warning(
+            "cupon_amount_corrected",
+            cupon=cupon,
+            llm_amount=amount,
+            printed_amount=corrected,
+            description=txn.get("description"),
         )
         txn["amount"] = corrected
         if txn.get("installments"):

@@ -1,6 +1,10 @@
 import re
 from decimal import Decimal
 
+import structlog
+
+logger = structlog.get_logger()
+
 _LEDGER_LINE_RE = re.compile(
     r"^\d{2}[/-]\d{2}(?:-\d{4})?\s+.*?(?P<amount>-?[0-9.]*[0-9],[0-9]{2})"
     r"\s*\$?\s*(?P<saldo>-?[0-9.]*[0-9],[0-9]{2})\s*$"
@@ -57,10 +61,12 @@ def verify_and_correct_ledger(transactions: list[dict], extracted_text: str) -> 
         reported = Decimal(str(amount))
         if abs(reported - printed_amount) <= Decimal("0.01"):
             continue
-        print(
-            f"[worker] ledger: monto del LLM ({amount}) no coincide con el impreso "
-            f"({printed_amount}) — corregido y marcado para revisión: "
-            f"{txn.get('description')!r} {txn.get('date')!r}"
+        logger.warning(
+            "ledger_amount_corrected",
+            llm_amount=amount,
+            printed_amount=float(printed_amount),
+            description=txn.get("description"),
+            date=txn.get("date"),
         )
         txn["amount"] = float(printed_amount)
         txn["confidence"] = min(float(txn.get("confidence", 1.0)), 0.5)
