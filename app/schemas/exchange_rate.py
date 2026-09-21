@@ -18,5 +18,6 @@ class ExchangeRateRead(BaseModel):
     id: uuid.UUID
     period_month: date
     mep_rate: float
+    buy_rate: float | None
     source: MepSource
     set_at: datetime

@@ -34,6 +34,9 @@ class ExchangeRate(Base):
     )
     period_month: Mapped[date] = mapped_column(Date, nullable=False)
     mep_rate: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    # "Venta" — el valor que se usa en todos los calculos existentes (worker,
+    # dashboard). buy_rate ("compra") es solo informativo.
+    buy_rate: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     source: Mapped[MepSource] = mapped_column(
         Enum(MepSource, name="mep_source"), nullable=False, default=MepSource.manual
     )

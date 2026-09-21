@@ -1,0 +1,27 @@
+name: Sync daily MEP rate
+
+on:
+  schedule:
+    # 09:00 ART (12:00 UTC) todos los dias. Tambien despierta el servicio de
+    # Render (free tier) si estaba dormido por inactividad.
+    - cron: "0 12 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call internal sync endpoint
+        run: |
+          if [ -z "${{ secrets.MEP_SYNC_URL }}" ]; then
+            echo "MEP_SYNC_URL no está configurado todavía (la app no está deployada) — se salta este run."
+            exit 0
+          fi
+          status=$(curl -s -o /tmp/response.json -w "%{http_code}" -X POST \
+            -H "x-internal-secret: ${{ secrets.INTERNAL_SYNC_SECRET }}" \
+            "${{ secrets.MEP_SYNC_URL }}")
+          cat /tmp/response.json
+          if [ "$status" -ge 300 ]; then
+            echo "sync-mep respondio $status"
+            exit 1
+          fi
