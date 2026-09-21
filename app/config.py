@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     llm_large_doc_threshold: int = 30
     anthropic_api_key: str = ""
 
+    # Secreto compartido para endpoints internos llamados por procesos
+    # automáticos (ej. el cron de GitHub Actions que sincroniza el TC MEP
+    # diario), no por usuarios. Vacío por default = endpoint rechaza todo.
+    internal_sync_secret: str = ""
+
     # App
     environment: str = "development"
     confidence_threshold: float = 0.75
