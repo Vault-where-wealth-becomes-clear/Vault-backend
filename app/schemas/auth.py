@@ -51,3 +51,13 @@ class ChallengeResponse(BaseModel):
 class ChangePasswordRequest(BaseModel):
     old_password: str
     new_password: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ConfirmForgotPasswordRequest(BaseModel):
+    email: EmailStr
+    code: str
+    new_password: str
