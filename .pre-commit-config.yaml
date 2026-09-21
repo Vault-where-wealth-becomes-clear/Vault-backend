@@ -1,0 +1,17 @@
+# Local pre-commit hooks. Install once with:
+#   pip install pre-commit && pre-commit install
+#
+# Run `pre-commit autoupdate` after adding this file to pin hooks to the
+# actual latest release tags — the `rev` below may drift behind upstream.
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
