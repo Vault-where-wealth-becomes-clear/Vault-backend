@@ -26,14 +26,20 @@ def _prev_month(period_month: date) -> date:
     return (period_month - timedelta(days=1)).replace(day=1)
 
 
-async def _get_mep_for_month(db: AsyncSession, period_month: date) -> Decimal | None:
+async def _get_mep_for_month(db: AsyncSession, user_id, period_month: date) -> Decimal | None:
     mep = await db.scalar(
-        select(ExchangeRate.mep_rate).where(ExchangeRate.period_month == period_month)
+        select(ExchangeRate.mep_rate).where(
+            ExchangeRate.user_id == user_id,
+            ExchangeRate.period_month == period_month,
+        )
     )
     if mep is None:
         mep = await db.scalar(
             select(ExchangeRate.mep_rate)
-            .where(ExchangeRate.period_month <= period_month)
+            .where(
+                ExchangeRate.user_id == user_id,
+                ExchangeRate.period_month <= period_month,
+            )
             .order_by(ExchangeRate.period_month.desc())
             .limit(1)
         )
@@ -45,7 +51,7 @@ async def get_patrimonio_actual(db: AsyncSession, user_id, period_month: date) -
     Suma current_balance de todas las cuentas activas del usuario,
     excluyendo tarjetas de crédito. Convierte saldos ARS a USD con el MEP del período.
     """
-    mep = await _get_mep_for_month(db, period_month)
+    mep = await _get_mep_for_month(db, user_id, period_month)
     if mep is None:
         return Decimal("0")  # no MEP loaded at all — return 0 rather than inflate with 1:1
 
@@ -111,6 +117,7 @@ async def get_month_summary(db: AsyncSession, user_id, period_month: date) -> Mo
     # mezclarlas sin convertir o excluirlas.
     mep_rate = await db.scalar(
         select(ExchangeRate.mep_rate).where(
+            ExchangeRate.user_id == user_id,
             extract("year", ExchangeRate.period_month) == period_month.year,
             extract("month", ExchangeRate.period_month) == period_month.month,
         )
@@ -247,7 +254,7 @@ async def get_monthly_series(db: AsyncSession, user_id, anchor: date, count: int
     points: list[dict] = []
     for month in months:
         flujo = await get_flujo_del_mes(db, user_id, month)
-        mep = await _get_mep_for_month(db, month)
+        mep = await _get_mep_for_month(db, user_id, month)
 
         resultado_usd = float(Decimal(str(flujo["resultado_ars"])) / mep) if mep else None
         gasto_usd = float(abs(Decimal(str(flujo["egresos_ars"]))) / mep) if mep else None
