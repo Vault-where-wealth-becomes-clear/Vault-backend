@@ -64,6 +64,17 @@ class CognitoClient:
             ProposedPassword=new_password,
         )
 
+    def forgot_password(self, email: str) -> None:
+        self.client.forgot_password(ClientId=self.client_id, Username=email)
+
+    def confirm_forgot_password(self, email: str, code: str, new_password: str) -> None:
+        self.client.confirm_forgot_password(
+            ClientId=self.client_id,
+            Username=email,
+            ConfirmationCode=code,
+            Password=new_password,
+        )
+
     def admin_delete_user(self, email: str) -> None:
         try:
             self.client.admin_delete_user(UserPoolId=self.user_pool_id, Username=email)

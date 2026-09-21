@@ -1,14 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from jose import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aws.cognito import CognitoClient, get_cognito
 from app.database import get_db
+from app.limiter import limiter
 from app.middleware.auth import security
 from app.schemas.auth import (
     ChallengeResponse,
     ChangePasswordRequest,
+    ConfirmForgotPasswordRequest,
     ConfirmRequest,
+    ForgotPasswordRequest,
     LoginRequest,
     RefreshRequest,
     RegisterRequest,
@@ -127,6 +130,66 @@ async def change_password(
             status_code=429, detail="Demasiados intentos. Intentá más tarde"
         ) from exc
     return {"detail": "Contraseña actualizada"}
+
+
+@router.post("/forgot-password")
+@limiter.limit("5/hour")
+async def forgot_password(
+    request: Request,
+    body: ForgotPasswordRequest,
+    cognito: CognitoClient = Depends(get_cognito),
+):
+    """Dispara el codigo de recuperacion por mail via Cognito.
+
+    Devuelve el mismo mensaje exista o no el email: decir explicitamente
+    "ese email no esta registrado" convertiria este endpoint en una forma
+    de listar que emails tienen cuenta en la app.
+    """
+    try:
+        cognito.forgot_password(body.email)
+    except cognito.client.exceptions.UserNotFoundException:
+        pass
+    except cognito.client.exceptions.InvalidParameterException:
+        # Cognito devuelve esto para cuentas sin email verificado / sin
+        # confirmar todavia. Mismo mensaje generico, mismo motivo que arriba.
+        pass
+    except cognito.client.exceptions.LimitExceededException as exc:
+        raise HTTPException(
+            status_code=429, detail="Demasiados intentos. Intentá más tarde"
+        ) from exc
+
+    return {
+        "detail": "Si el email está registrado, vas a recibir un código para restablecer tu contraseña"
+    }
+
+
+@router.post("/confirm-forgot-password")
+@limiter.limit("10/hour")
+async def confirm_forgot_password(
+    request: Request,
+    body: ConfirmForgotPasswordRequest,
+    cognito: CognitoClient = Depends(get_cognito),
+):
+    try:
+        cognito.confirm_forgot_password(body.email, body.code, body.new_password)
+    except cognito.client.exceptions.CodeMismatchException as exc:
+        raise HTTPException(status_code=400, detail="Código inválido") from exc
+    except cognito.client.exceptions.ExpiredCodeException as exc:
+        raise HTTPException(status_code=400, detail="El código expiró, pedí uno nuevo") from exc
+    except cognito.client.exceptions.UserNotFoundException as exc:
+        # Mismo detail que un codigo invalido: no confirmar/negar si el
+        # email existe.
+        raise HTTPException(status_code=400, detail="Código inválido") from exc
+    except cognito.client.exceptions.InvalidPasswordException as exc:
+        raise HTTPException(
+            status_code=400, detail="La nueva contraseña no cumple los requisitos de seguridad"
+        ) from exc
+    except cognito.client.exceptions.LimitExceededException as exc:
+        raise HTTPException(
+            status_code=429, detail="Demasiados intentos. Intentá más tarde"
+        ) from exc
+
+    return {"detail": "Contraseña restablecida"}
 
 
 @router.post("/logout")
