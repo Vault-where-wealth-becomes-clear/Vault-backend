@@ -27,7 +27,7 @@ async def test_ars_cash_balance_is_converted_via_mep_rate(db):
             current_balance=Decimal("130000.00"),
         )
     )
-    db.add(ExchangeRate(period_month=date(2026, 7, 1), mep_rate=Decimal("1300")))
+    db.add(ExchangeRate(user_id=user_id, period_month=date(2026, 7, 1), mep_rate=Decimal("1300")))
     await db.flush()
 
     summary = await get_month_summary(db, user_id, date(2026, 7, 1))

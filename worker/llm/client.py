@@ -2,6 +2,18 @@ import anthropic
 
 from app.config import settings
 
+# El SDK ya reintenta solo — 408, 409, 429, 5xx y errores de conexion, con
+# backoff exponencial y jitter (ver anthropic._base_client). Un retry propio
+# encima de eso solo multiplicaria la espera, asi que lo unico que hace falta
+# es subir el techo: cada upload cuesta una llamada cara y larga, y perderlo
+# por un 529 pasajero obliga a esperar el ciclo completo de redelivery de SQS
+# (minutos) en vez de unos segundos de backoff. El default del SDK son 2.
+_MAX_RETRIES = 5
+
+
+def _client() -> anthropic.Anthropic:
+    return anthropic.Anthropic(api_key=settings.anthropic_api_key, max_retries=_MAX_RETRIES)
+
 
 def _extract_text(message: anthropic.types.Message) -> str:
     """
@@ -21,8 +33,7 @@ def _extract_text(message: anthropic.types.Message) -> str:
 
 def call_llm(prompt: str, system: str) -> str:
     """Llama al LLM configurado. El modelo se controla con LLM_MODEL en .env."""
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    message = client.messages.create(
+    message = _client().messages.create(
         model=settings.llm_model,
         max_tokens=4096,
         system=system,
@@ -46,7 +57,6 @@ def call_llm_with_skill(prompt: str, system: str, model: str | None = None) -> t
     el caller lo persista (ver Upload.llm_*), en vez de que quede solo en el
     log de la terminal.
     """
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
     resolved_model = model or settings.llm_model
 
     extra_body: dict = {}
@@ -63,7 +73,7 @@ def call_llm_with_skill(prompt: str, system: str, model: str | None = None) -> t
         extra_body["thinking"] = {"type": "adaptive"}
         extra_body["output_config"] = {"effort": "medium"}
 
-    message = client.messages.create(
+    message = _client().messages.create(
         model=resolved_model,
         # 64k, no 16k/32k: con extended thinking, los tokens de razonamiento
         # cuentan contra max_tokens, y varían de una corrida a otra — en
