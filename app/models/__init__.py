@@ -1,4 +1,5 @@
 from app.models.account import Account
+from app.models.audit_log import AuditLog
 from app.models.category_rule import CategoryRule
 from app.models.exchange_rate import ExchangeRate
 from app.models.financial_snapshot import FinancialSnapshot
@@ -10,6 +11,7 @@ from app.models.user import User
 
 __all__ = [
     "Account",
+    "AuditLog",
     "CategoryRule",
     "ExchangeRate",
     "FinancialSnapshot",
