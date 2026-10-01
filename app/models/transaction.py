@@ -3,7 +3,17 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Date, Enum, ForeignKey, Integer, Numeric, String, text
+from sqlalchemy import (
+    Boolean,
+    Date,
+    Enum,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -16,6 +26,14 @@ if TYPE_CHECKING:
 
 class Transaction(Base):
     __tablename__ = "transactions"
+    # Cierra el hueco de idempotencia si un mensaje de SQS se redelivera
+    # mientras el primer intento sigue corriendo: los dos intentos escriben
+    # el mismo (upload_id, sort_order) y uno de los dos muere en el commit
+    # en vez de duplicar el ledger. Las transacciones manuales tienen
+    # upload_id NULL y en Postgres los NULL no colisionan entre si.
+    __table_args__ = (
+        UniqueConstraint("upload_id", "sort_order", name="uq_transactions_upload_sort_order"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()")
