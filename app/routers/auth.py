@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from jose import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aws.cognito import CognitoClient, get_cognito
 from app.database import get_db
+from app.limiter import limiter
 from app.middleware.auth import security
 from app.schemas.auth import (
     ChallengeResponse,
@@ -21,9 +22,23 @@ from app.services.auth_service import get_or_create_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# Los limites se eligen para ser seguros incluso si todos los clientes caen en
+# el mismo bucket: el contenedor corre `uvicorn` sin `--forwarded-allow-ips`,
+# asi que detras del proxy de Render `get_remote_address()` puede devolver la
+# IP del proxy y no la del usuario. Aun compartido, este techo corta un ataque
+# de fuerza bruta (un TOTP de 6 digitos a 30/min tarda siglos) sin molestar al
+# trafico real de la beta. Ver el issue de resolucion de IP real para que
+# vuelvan a ser por-cliente.
+_LOGIN_LIMIT = "30/minute"
+_TOTP_LIMIT = "30/minute"
+_ACCOUNT_LIMIT = "20/hour"
+
 
 @router.post("/register", response_model=RegisterResponse)
-async def register(body: RegisterRequest, cognito: CognitoClient = Depends(get_cognito)):
+@limiter.limit(_ACCOUNT_LIMIT)
+async def register(
+    request: Request, body: RegisterRequest, cognito: CognitoClient = Depends(get_cognito)
+):
     """Crea el usuario en Cognito. La confirmacion (email/2FA) se completa desde el cliente."""
     try:
         cognito_sub = cognito.sign_up(body.email, body.password, body.name)
@@ -34,7 +49,10 @@ async def register(body: RegisterRequest, cognito: CognitoClient = Depends(get_c
 
 
 @router.post("/confirm")
-async def confirm(body: ConfirmRequest, cognito: CognitoClient = Depends(get_cognito)):
+@limiter.limit(_TOTP_LIMIT)
+async def confirm(
+    request: Request, body: ConfirmRequest, cognito: CognitoClient = Depends(get_cognito)
+):
     """Confirma el codigo enviado por email/SMS y deja la cuenta de Cognito activa."""
     try:
         cognito.confirm_sign_up(body.email, body.code)
@@ -49,7 +67,10 @@ async def confirm(body: ConfirmRequest, cognito: CognitoClient = Depends(get_cog
 
 
 @router.post("/resend-code")
-async def resend_code(body: ResendCodeRequest, cognito: CognitoClient = Depends(get_cognito)):
+@limiter.limit(_ACCOUNT_LIMIT)
+async def resend_code(
+    request: Request, body: ResendCodeRequest, cognito: CognitoClient = Depends(get_cognito)
+):
     try:
         cognito.resend_confirmation_code(body.email)
     except cognito.client.exceptions.InvalidParameterException as exc:
@@ -59,7 +80,9 @@ async def resend_code(body: ResendCodeRequest, cognito: CognitoClient = Depends(
 
 
 @router.post("/login", response_model=TokenResponse | ChallengeResponse)
+@limiter.limit(_LOGIN_LIMIT)
 async def login(
+    request: Request,
     body: LoginRequest,
     db: AsyncSession = Depends(get_db),
     cognito: CognitoClient = Depends(get_cognito),
@@ -80,7 +103,9 @@ async def login(
 
 
 @router.post("/totp", response_model=TokenResponse)
+@limiter.limit(_TOTP_LIMIT)
 async def submit_totp(
+    request: Request,
     body: TotpRequest,
     db: AsyncSession = Depends(get_db),
     cognito: CognitoClient = Depends(get_cognito),
@@ -109,7 +134,9 @@ async def refresh(body: RefreshRequest, cognito: CognitoClient = Depends(get_cog
 
 
 @router.post("/change-password")
+@limiter.limit(_ACCOUNT_LIMIT)
 async def change_password(
+    request: Request,
     body: ChangePasswordRequest,
     credentials=Depends(security),
     cognito: CognitoClient = Depends(get_cognito),
