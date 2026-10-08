@@ -1,4 +1,5 @@
 import anthropic
+import structlog
 
 from app.config import settings
 
@@ -13,6 +14,9 @@ _MAX_RETRIES = 5
 
 def _client() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=settings.anthropic_api_key, max_retries=_MAX_RETRIES)
+
+
+logger = structlog.get_logger()
 
 
 def _extract_text(message: anthropic.types.Message) -> str:
@@ -107,11 +111,15 @@ def call_llm_with_skill(prompt: str, system: str, model: str | None = None) -> t
         thinking_tokens = getattr(thinking_details, "thinking_tokens", 0) if thinking_details else 0
     cache_read = getattr(usage, "cache_read_input_tokens", 0)
     cache_creation = getattr(usage, "cache_creation_input_tokens", 0)
-    print(
-        f"[worker] usage: input={usage.input_tokens} "
-        f"cache_read={cache_read} cache_write={cache_creation} "
-        f"output={usage.output_tokens} thinking={thinking_tokens} "
-        f"stop_reason={message.stop_reason}"
+    logger.info(
+        "llm_usage",
+        model=resolved_model,
+        input_tokens=usage.input_tokens,
+        output_tokens=usage.output_tokens,
+        thinking_tokens=thinking_tokens,
+        cache_read_tokens=cache_read,
+        cache_creation_tokens=cache_creation,
+        stop_reason=message.stop_reason,
     )
     if message.stop_reason == "max_tokens":
         raise ValueError(

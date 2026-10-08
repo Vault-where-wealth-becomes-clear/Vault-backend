@@ -15,18 +15,23 @@ deploys donde no hay forma de levantar un segundo proceso/servicio gratis.
 
 import asyncio
 import json
-import traceback
+import time
 
 import boto3
+import structlog
 
 from app.config import settings
+from app.logging_config import configure_logging
 from worker.processing import process_upload
+
+logger = structlog.get_logger()
 
 
 async def poll_loop() -> None:
     if not settings.sqs_queue_url:
         raise SystemExit("SQS_QUEUE_URL no esta configurado en .env")
 
+    configure_logging()
     loop = asyncio.get_running_loop()
     sqs = boto3.client(
         "sqs",
@@ -36,7 +41,7 @@ async def poll_loop() -> None:
         endpoint_url=settings.aws_endpoint_url or None,
     )
 
-    print(f"[worker] escuchando {settings.sqs_queue_url}")
+    logger.info("worker_listening", queue_url=settings.sqs_queue_url)
     while True:
         response = await loop.run_in_executor(
             None,
@@ -49,7 +54,15 @@ async def poll_loop() -> None:
         for message in response.get("Messages", []):
             body = json.loads(message["Body"])
             upload_id = body.get("upload_id")
-            print(f"[worker] procesando upload {upload_id}")
+            # El limite del job es el mensaje, asi que la correlacion se ata
+            # aca: a partir de este punto toda linea que emita el pipeline
+            # —processing, processors, cliente del LLM— sale con su upload_id,
+            # sin pasar un logger por parametro hasta el ultimo helper.
+            structlog.contextvars.bind_contextvars(upload_id=upload_id)
+            logger.info("upload_received")
+            # Reloj monotonico: `duration_seconds` mide tiempo transcurrido y
+            # no puede saltar si el reloj del host se ajusta.
+            started = time.monotonic()
             try:
                 await process_upload(body)
                 await loop.run_in_executor(
@@ -59,10 +72,19 @@ async def poll_loop() -> None:
                         ReceiptHandle=message["ReceiptHandle"],
                     ),
                 )
-                print(f"[worker] upload {upload_id} terminado")
-            except Exception:
-                traceback.print_exc()
-                print(f"[worker] upload {upload_id} fallo, queda en la cola para reintento")
+                logger.info(
+                    "upload_processed",
+                    duration_seconds=round(time.monotonic() - started, 3),
+                )
+            except Exception as exc:
+                logger.error(
+                    "upload_failed",
+                    duration_seconds=round(time.monotonic() - started, 3),
+                    error=str(exc),
+                    exc_info=True,
+                )
+            finally:
+                structlog.contextvars.unbind_contextvars("upload_id")
 
 
 if __name__ == "__main__":
