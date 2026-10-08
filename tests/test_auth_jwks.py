@@ -1,8 +1,8 @@
 import time
 
+import jwt
 import pytest
 from fastapi import HTTPException
-from jose import jwt
 
 from app.middleware import auth
 

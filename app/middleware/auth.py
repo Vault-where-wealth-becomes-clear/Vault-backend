@@ -1,10 +1,11 @@
+import json
 import time
 
 import httpx
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import jwt
-from jose.exceptions import JWTError
+from jwt import InvalidTokenError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -76,12 +77,12 @@ async def _decode_token(token: str) -> dict:
             raise HTTPException(status_code=401, detail="Token invalido")
         return jwt.decode(
             token,
-            key,
+            jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(key)),
             algorithms=["RS256"],
             audience=settings.cognito_client_id,
             options={"verify_aud": True},
         )
-    except JWTError as exc:
+    except (InvalidTokenError, ValueError, TypeError) as exc:
         raise HTTPException(status_code=401, detail="Token expirado o invalido") from exc
 
 

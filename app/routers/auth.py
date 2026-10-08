@@ -1,5 +1,5 @@
+import jwt
 from fastapi import APIRouter, Depends, HTTPException
-from jose import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aws.cognito import CognitoClient, get_cognito
@@ -140,7 +140,7 @@ async def logout(
 
 async def _issue_tokens(db: AsyncSession, auth_result: dict, email: str) -> TokenResponse:
     id_token = auth_result["IdToken"]
-    claims = jwt.get_unverified_claims(id_token)
+    claims = jwt.decode(id_token, options={"verify_signature": False})
     await get_or_create_user(
         db,
         cognito_sub=claims["sub"],
