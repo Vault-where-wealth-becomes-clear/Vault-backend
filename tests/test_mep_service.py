@@ -56,7 +56,7 @@ async def test_recalculate_period_does_not_corrupt_usd_native_transactions(db):
     db.add(txn)
     await db.flush()
 
-    await recalculate_period(db, date(2026, 7, 1), Decimal("1300"))
+    await recalculate_period(db, user_id, date(2026, 7, 1), Decimal("1300"))
     await db.refresh(txn)
 
     # El monto en USD es el dato real del extracto: no debe cambiar al redeclarar el TC.
@@ -81,7 +81,7 @@ async def test_recalculate_period_updates_usd_for_ars_native_transactions(db):
     db.add(txn)
     await db.flush()
 
-    await recalculate_period(db, date(2026, 7, 1), Decimal("1000"))
+    await recalculate_period(db, user_id, date(2026, 7, 1), Decimal("1000"))
     await db.refresh(txn)
 
     # El monto en ARS es el dato real del extracto: no debe cambiar al redeclarar el TC.
