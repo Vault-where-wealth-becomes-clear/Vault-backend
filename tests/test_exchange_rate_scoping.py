@@ -68,9 +68,9 @@ async def test_recalculating_a_period_does_not_touch_another_users_transactions(
 
     assert actualizadas == 1, "solo la transaccion de Ana entra en el recalculo"
     assert (await db.get(Transaction, txn_ana)).amount_usd == Decimal("50.0000")
-    assert (await db.get(Transaction, txn_beto)).amount_usd == Decimal(
-        "100.0000"
-    ), "el TC declarado por Ana no puede mover los montos convertidos de Beto"
+    assert (await db.get(Transaction, txn_beto)).amount_usd == Decimal("100.0000"), (
+        "el TC declarado por Ana no puede mover los montos convertidos de Beto"
+    )
 
 
 async def test_a_users_rate_is_not_visible_to_another_user(db):
@@ -81,9 +81,9 @@ async def test_a_users_rate_is_not_visible_to_another_user(db):
     await db.flush()
 
     assert await _get_mep_for_month(db, ana_id, _PERIODO) == Decimal("2000")
-    assert (
-        await _get_mep_for_month(db, beto_id, _PERIODO) is None
-    ), "Beto no declaro TC: el dashboard no puede tomar prestado el de Ana"
+    assert await _get_mep_for_month(db, beto_id, _PERIODO) is None, (
+        "Beto no declaro TC: el dashboard no puede tomar prestado el de Ana"
+    )
 
 
 async def test_the_same_period_can_hold_one_rate_per_user(db):
