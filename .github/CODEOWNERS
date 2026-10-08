@@ -1,0 +1,10 @@
+# CODEOWNERS
+#
+# With a 3-person engineering team, we don't yet split ownership by
+# directory — everyone is a default reviewer. Split this file into
+# per-directory owners (e.g. worker/ vs app/) once the team grows or
+# ownership naturally specializes.
+#
+# Usernames below are current org members; update as the team changes.
+
+* @FToledoLG @Mvrancic @TomasD1az

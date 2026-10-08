@@ -167,7 +167,9 @@ async def process_upload(message: dict) -> None:
                 sub_period = date.fromisoformat(month_key + "-01")
                 sub_txns_raw = txn_by_month[month_key]
 
-                sub_mep = await _get_mep_rate(db, sub_period)  # exact or most-recent fallback
+                sub_mep = await _get_mep_rate(
+                    db, user_id, sub_period
+                )  # exact or most-recent fallback
                 if sub_mep is None:
                     raise ValueError(
                         f"Sin tipo de cambio MEP disponible para {sub_period} — cargá al menos un TC antes de procesar este upload"
@@ -348,15 +350,23 @@ async def _get_category_rules(db, user_id: uuid.UUID) -> dict[str, str]:
     return {row.keyword: row.category for row in rows}
 
 
-async def _get_mep_rate(db, period_month: date) -> Decimal | None:
-    """Return MEP rate for the exact period, or the most recent prior rate. Never 1:1."""
-    rate = await db.scalar(select(ExchangeRate).where(ExchangeRate.period_month == period_month))
+async def _get_mep_rate(db, user_id: uuid.UUID, period_month: date) -> Decimal | None:
+    """TC MEP del usuario para el periodo exacto, o el mas reciente anterior. Nunca 1:1."""
+    rate = await db.scalar(
+        select(ExchangeRate).where(
+            ExchangeRate.user_id == user_id,
+            ExchangeRate.period_month == period_month,
+        )
+    )
     if rate:
         return rate.mep_rate
-    # Fallback: most recent rate before this period
+    # Fallback: la tasa mas reciente de este usuario anterior al periodo
     rate = await db.scalar(
         select(ExchangeRate)
-        .where(ExchangeRate.period_month < period_month)
+        .where(
+            ExchangeRate.user_id == user_id,
+            ExchangeRate.period_month < period_month,
+        )
         .order_by(ExchangeRate.period_month.desc())
         .limit(1)
     )
