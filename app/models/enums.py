@@ -1,13 +1,13 @@
 import enum
 
 
-class PlanType(str, enum.Enum):
+class PlanType(enum.StrEnum):
     free = "free"
     pro = "pro"
     family = "family"
 
 
-class AccountType(str, enum.Enum):
+class AccountType(enum.StrEnum):
     credit_card_ars = "credit_card_ars"
     credit_card_usd = "credit_card_usd"
     checking_ars = "checking_ars"
@@ -18,7 +18,7 @@ class AccountType(str, enum.Enum):
     savings_box = "savings_box"
 
 
-class UploadStatus(str, enum.Enum):
+class UploadStatus(enum.StrEnum):
     pending = "pending"
     processing = "processing"
     review = "review"
@@ -26,22 +26,22 @@ class UploadStatus(str, enum.Enum):
     error = "error"
 
 
-class CurrencyType(str, enum.Enum):
+class CurrencyType(enum.StrEnum):
     ARS = "ARS"
     USD = "USD"
 
 
-class RuleSource(str, enum.Enum):
+class RuleSource(enum.StrEnum):
     user = "user"
     ai = "ai"
 
 
-class MepSource(str, enum.Enum):
+class MepSource(enum.StrEnum):
     manual = "manual"
     api = "api"
 
 
-class SkillModule(str, enum.Enum):
+class SkillModule(enum.StrEnum):
     flujo_mensual = "flujo_mensual"
     categorizacion_gasto = "categorizacion_gasto"
     flujo_periodo = "flujo_periodo"

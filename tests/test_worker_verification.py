@@ -156,9 +156,9 @@ def test_last_printed_saldo_uses_statement_order_not_date_order():
         {"date": "2026-07-05", "_printed_saldo": 150000.0},
     ]
 
-    assert last_printed_saldo(txns) == Decimal(
-        "150000.0"
-    ), "el ultimo del extracto, no el mas nuevo"
+    assert last_printed_saldo(txns) == Decimal("150000.0"), (
+        "el ultimo del extracto, no el mas nuevo"
+    )
 
 
 def test_reconciliation_gap_is_none_without_any_printed_balance():
